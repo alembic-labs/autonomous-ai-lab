@@ -1,0 +1,55 @@
+export const LAB_GLB = "/3d-lab/sci-fi_lab.glb";
+
+export type ScientistSlot = {
+  id: string;
+  url: string;
+  zone: string;
+  position: [number, number, number];
+  rotation?: [number, number, number];
+  /** Extra uniform scale after height fit (some GLBs under-report bbox vs skinned bounds). */
+  scaleMultiplier?: number;
+};
+
+/** Snapshots from downloaded lab-layout.json (manual placement in viewer). */
+export const SCIENTISTS: ScientistSlot[] = [
+  {
+    id: "1",
+    zone: "1 · floor right of GATE 07",
+    url: "/3d-lab/scientsit-1.glb",
+    position: [8.175426042597449, 0.02577319356117805, -4.3035778789495165],
+    rotation: [-3.141592653589793, 1.4551804632888736, -3.141592653589793],
+  },
+  {
+    id: "2",
+    zone: "2 · green workstation wall",
+    url: "/3d-lab/scientsit-2.glb",
+    position: [7.678855221765017, 0.06042707976589268, -1.0638662251660016],
+    rotation: [-3.141592653589793, 1.4400210547869952, -3.141592653589793],
+  },
+  {
+    id: "3",
+    zone: "3 · left blue tanks / pipes",
+    url: "/3d-lab/scientsit-3.glb",
+    position: [4.021386137837405, 0.056348486161091546, -1.5024284946462654],
+    rotation: [3.119599245400525, 0.07009911961135065, -3.1330113468574026],
+  },
+  {
+    id: "4",
+    zone: "4 · center tile (table ↔ cylinder)",
+    url: "/3d-lab/scientsit-4.glb",
+    position: [-0.008629919775650807, 0.02692167797101399, -3.484664732923385],
+    rotation: [3.141592653589793, -0.02806375087044089, 3.141592653589793],
+  },
+  {
+    id: "5",
+    zone: "5 · blue cylindrical chamber",
+    url: "/3d-lab/scientsit-5.glb",
+    position: [0.28362921116237416, 1.6461800946291325, -0.35922740080251647],
+    rotation: [-3.141592653589793, 1.4905378342005715, -3.141592653589793],
+    scaleMultiplier: 0.082,
+  },
+];
+
+export const LAB_TARGET_FOOTPRINT = 12;
+
+export const SCIENTIST_TARGET_HEIGHT = 1.78;

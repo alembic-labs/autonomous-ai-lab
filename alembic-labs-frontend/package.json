@@ -1,0 +1,40 @@
+{
+  "name": "alembic-labs-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ALEMBIC LABS — autonomous peptide research lab frontend",
+  "scripts": {
+    "clean": "node scripts/clean-next.mjs",
+    "dev": "next dev --turbo",
+    "dev:webpack": "next dev",
+    "dev:clean": "npm run clean && next dev --turbo",
+    "fix:next": "npm run clean && next build",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.91.1",
+    "3dmol": "^2.5.4",
+    "lucide-react": "^1.14.0",
+    "molstar": "^5.8.0",
+    "next": "^14.2.35",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "recharts": "^3.8.1",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.39",
+    "@types/react": "^18.3.28",
+    "@types/react-dom": "^18.3.7",
+    "autoprefixer": "^10.5.0",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35",
+    "postcss": "^8.5.12",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.3"
+  }
+}

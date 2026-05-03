@@ -1,0 +1,354 @@
+[
+  {
+    "name": "BPC-157",
+    "aliases": "Body Protection Compound 157, PL 14736",
+    "sequence": "GEPPPGKPADDAGLV",
+    "length": 15,
+    "peptide_class": "REGENERATIVE",
+    "known_targets": ["VEGFR2", "Nitric oxide synthase", "Growth hormone receptor"],
+    "canonical_targets": [
+      {
+        "name": "Vascular endothelial growth factor receptor 2",
+        "uniprot_id": "P35968",
+        "chembl_id": "CHEMBL279",
+        "gene_symbol": "KDR",
+        "mechanism_role": "primary — angiogenesis / NO axis"
+      },
+      {
+        "name": "Endothelial nitric oxide synthase",
+        "uniprot_id": "P29474",
+        "chembl_id": "CHEMBL3568",
+        "gene_symbol": "NOS3",
+        "mechanism_role": "secondary — NO modulation"
+      }
+    ],
+    "mechanism_brief": "Pentadecapeptide derived from gastric juice protein BPC. Modulates VEGF/NO axis, accelerates tendon, ligament and gut tissue regeneration.",
+    "biohacker_use": "Subcutaneous 250-500mcg/day for tendon/ligament injury, gut healing, soft-tissue regeneration. Frequent stack with TB-500 in regenerative protocols.",
+    "references": ["18642930", "32017115", "21030672"]
+  },
+  {
+    "name": "TB-500",
+    "aliases": "Thymosin beta-4 fragment, TMSB4X 17-23",
+    "sequence": "LKKTETQ",
+    "length": 7,
+    "peptide_class": "REGENERATIVE",
+    "known_targets": ["G-actin", "Ku80"],
+    "canonical_targets": [
+      {
+        "name": "Beta-actin",
+        "uniprot_id": "P60709",
+        "chembl_id": null,
+        "gene_symbol": "ACTB",
+        "mechanism_role": "primary — G-actin sequestration"
+      }
+    ],
+    "mechanism_brief": "Active region of thymosin beta-4 sequestering G-actin and promoting cell migration, angiogenesis and tissue repair.",
+    "biohacker_use": "2-2.5mg subcutaneous twice weekly during acute injury, then taper. Synergistic with BPC-157 in regenerative stacks.",
+    "references": ["19736295", "16374873"]
+  },
+  {
+    "name": "MOTS-c",
+    "aliases": "Mitochondrial ORF of the 12S rRNA-c",
+    "sequence": "MRWQEMGYIFYPRKLR",
+    "length": 16,
+    "peptide_class": "LONGEVITY",
+    "known_targets": ["AMPK", "Folate metabolism", "MIC complex"],
+    "canonical_targets": [
+      {
+        "name": "5'-AMP-activated protein kinase catalytic subunit alpha-2",
+        "uniprot_id": "P54646",
+        "chembl_id": "CHEMBL2492",
+        "gene_symbol": "PRKAA2",
+        "mechanism_role": "primary — AMPK pathway activator"
+      },
+      {
+        "name": "5'-AMP-activated protein kinase catalytic subunit alpha-1",
+        "uniprot_id": "Q13131",
+        "chembl_id": "CHEMBL3032",
+        "gene_symbol": "PRKAA1",
+        "mechanism_role": "primary — AMPK pathway activator (alternate isoform)"
+      }
+    ],
+    "mechanism_brief": "Mitochondrial-derived peptide encoded within MT-RNR1. Activates AMPK, modulates folate-methionine metabolism and metabolic homeostasis.",
+    "biohacker_use": "5-10mg subcutaneous, often morning. Used in metabolic and longevity stacks for insulin sensitivity, exercise performance.",
+    "references": ["25738459", "29983347", "30760415"]
+  },
+  {
+    "name": "Humanin",
+    "aliases": "HN, MTRNR2L1",
+    "sequence": "MAPRGFSCLLLLTSEIDLPVKRRA",
+    "length": 24,
+    "peptide_class": "LONGEVITY",
+    "known_targets": ["BAX", "IGFBP-3", "FPRL1/FPR2"],
+    "canonical_targets": [
+      {
+        "name": "Apoptosis regulator BAX",
+        "uniprot_id": "Q07812",
+        "chembl_id": "CHEMBL2364",
+        "gene_symbol": "BAX",
+        "mechanism_role": "primary — BAX antagonism / anti-apoptotic"
+      },
+      {
+        "name": "Formyl peptide receptor 2",
+        "uniprot_id": "P25090",
+        "chembl_id": "CHEMBL3805",
+        "gene_symbol": "FPR2",
+        "mechanism_role": "secondary — extracellular signalling receptor"
+      }
+    ],
+    "mechanism_brief": "Mitochondrial-derived peptide; binds BAX to inhibit apoptosis, neuroprotective, modulates IGF axis.",
+    "biohacker_use": "Limited human dosing data. Investigated for neuroprotection and metabolic resilience. Often discussed alongside MOTS-c.",
+    "references": ["11371641", "20530745"]
+  },
+  {
+    "name": "Semaglutide",
+    "aliases": "Ozempic, Wegovy, NN9535",
+    "sequence": "HAEGTFTSDVSSYLEGQAAKEFIAWLVRGRG",
+    "length": 31,
+    "peptide_class": "METABOLIC",
+    "known_targets": ["GLP-1 receptor"],
+    "canonical_targets": [
+      {
+        "name": "Glucagon-like peptide 1 receptor",
+        "uniprot_id": "P43220",
+        "chembl_id": "CHEMBL1784",
+        "gene_symbol": "GLP1R",
+        "mechanism_role": "primary — selective GLP-1R agonist"
+      }
+    ],
+    "mechanism_brief": "Long-acting GLP-1 receptor agonist with substituted Aib at position 2 and a fatty-acid-modified Lys for albumin binding.",
+    "biohacker_use": "Weekly subcutaneous 0.25-2.4mg for weight management and glycaemic control. Standard of care for obesity / T2D.",
+    "references": ["26666242", "30403745"]
+  },
+  {
+    "name": "Tirzepatide",
+    "aliases": "Mounjaro, Zepbound, LY3298176",
+    "sequence": "YAEGTFTSDYSIYLDKQAAKEFVCWLLAGGPSSGAPPPS",
+    "length": 39,
+    "peptide_class": "METABOLIC",
+    "known_targets": ["GLP-1 receptor", "GIP receptor"],
+    "canonical_targets": [
+      {
+        "name": "Glucagon-like peptide 1 receptor",
+        "uniprot_id": "P43220",
+        "chembl_id": "CHEMBL1784",
+        "gene_symbol": "GLP1R",
+        "mechanism_role": "primary — incretin agonism"
+      },
+      {
+        "name": "Gastric inhibitory polypeptide receptor",
+        "uniprot_id": "P48546",
+        "chembl_id": "CHEMBL5503",
+        "gene_symbol": "GIPR",
+        "mechanism_role": "primary — dual incretin agonism"
+      }
+    ],
+    "mechanism_brief": "Dual GIP/GLP-1 receptor agonist with C20 fatty diacid modification for once-weekly pharmacokinetics.",
+    "biohacker_use": "Weekly subcutaneous 2.5-15mg. Strong weight-loss profile alongside glycaemic control.",
+    "references": ["30049675", "35441470"]
+  },
+  {
+    "name": "Retatrutide",
+    "aliases": "LY3437943",
+    "sequence": "YAQGTFTSDYSIYLDKQAAKDFVQWLLAGGPSSGAPPPS",
+    "length": 39,
+    "peptide_class": "METABOLIC",
+    "known_targets": ["GLP-1 receptor", "GIP receptor", "Glucagon receptor"],
+    "canonical_targets": [
+      {
+        "name": "Glucagon-like peptide 1 receptor",
+        "uniprot_id": "P43220",
+        "chembl_id": "CHEMBL1784",
+        "gene_symbol": "GLP1R",
+        "mechanism_role": "primary — triple agonism (GLP-1)"
+      },
+      {
+        "name": "Gastric inhibitory polypeptide receptor",
+        "uniprot_id": "P48546",
+        "chembl_id": "CHEMBL5503",
+        "gene_symbol": "GIPR",
+        "mechanism_role": "primary — triple agonism (GIP)"
+      },
+      {
+        "name": "Glucagon receptor",
+        "uniprot_id": "P47871",
+        "chembl_id": "CHEMBL2069",
+        "gene_symbol": "GCGR",
+        "mechanism_role": "primary — triple agonism (glucagon)"
+      }
+    ],
+    "mechanism_brief": "Triple agonist (GLP-1 / GIP / glucagon). Investigational; phase 2 reported substantial weight loss.",
+    "biohacker_use": "Investigational. Weekly subcutaneous in trials; not approved.",
+    "references": ["37356268"]
+  },
+  {
+    "name": "Ipamorelin",
+    "aliases": "NNC 26-0161",
+    "sequence": "AibHisDBNalDPheLysNH2",
+    "length": 5,
+    "peptide_class": "PERFORMANCE",
+    "known_targets": ["Ghrelin receptor (GHSR-1a)"],
+    "canonical_targets": [
+      {
+        "name": "Growth hormone secretagogue receptor type 1",
+        "uniprot_id": "Q92847",
+        "chembl_id": "CHEMBL5719",
+        "gene_symbol": "GHSR",
+        "mechanism_role": "primary — selective GHSR-1a agonism"
+      }
+    ],
+    "mechanism_brief": "Selective ghrelin receptor agonist; pulse-releases growth hormone with minimal cortisol/prolactin elevation.",
+    "biohacker_use": "200-300mcg subcutaneous, 1-3x/day. Frequent stack with CJC-1295 for GH pulses targeted at recovery and body composition.",
+    "references": ["10341692"]
+  },
+  {
+    "name": "Sermorelin",
+    "aliases": "GRF (1-29), GHRH (1-29)NH2",
+    "sequence": "YADAIFTNSYRKVLGQLSARKLLQDIMSR",
+    "length": 29,
+    "peptide_class": "PERFORMANCE",
+    "known_targets": ["GHRH receptor"],
+    "canonical_targets": [
+      {
+        "name": "Growth hormone-releasing hormone receptor",
+        "uniprot_id": "Q02643",
+        "chembl_id": "CHEMBL2049",
+        "gene_symbol": "GHRHR",
+        "mechanism_role": "primary — pituitary GH release stimulator"
+      }
+    ],
+    "mechanism_brief": "Truncated active fragment of GHRH; stimulates pituitary GH release.",
+    "biohacker_use": "200-500mcg subcutaneous, evening. Used to support physiological GH pulse pattern.",
+    "references": ["6298752"]
+  },
+  {
+    "name": "Tesamorelin",
+    "aliases": "Egrifta, TH9507",
+    "sequence": "YADAIFTNSYRKVLGQLSARKLLQDIMSRQQGESNQERGARARL",
+    "length": 44,
+    "peptide_class": "PERFORMANCE",
+    "known_targets": ["GHRH receptor"],
+    "canonical_targets": [
+      {
+        "name": "Growth hormone-releasing hormone receptor",
+        "uniprot_id": "Q02643",
+        "chembl_id": "CHEMBL2049",
+        "gene_symbol": "GHRHR",
+        "mechanism_role": "primary — stabilised GHRH analogue"
+      }
+    ],
+    "mechanism_brief": "Stabilised GHRH analogue with N-terminal trans-3-hexenoyl group for pharmacokinetics. Reduces visceral adiposity.",
+    "biohacker_use": "1-2mg subcutaneous daily. Studied in HIV-associated lipodystrophy; used off-label for visceral fat reduction.",
+    "references": ["20484482"]
+  },
+  {
+    "name": "Selank",
+    "aliases": "TP-7",
+    "sequence": "TKPRPGP",
+    "length": 7,
+    "peptide_class": "COGNITIVE",
+    "known_targets": ["Tuftsin receptor", "GABAergic system"],
+    "canonical_targets": [],
+    "mechanism_brief": "Synthetic tuftsin analogue with C-terminal Pro-Gly-Pro. Modulates BDNF, anxiolytic profile in rodent and small clinical studies.",
+    "biohacker_use": "300mcg intranasal, 1-3x/day. Used for anxiolysis, mild nootropic effect.",
+    "references": ["18389644"]
+  },
+  {
+    "name": "Semax",
+    "aliases": "Met-Glu-His-Phe-Pro-Gly-Pro",
+    "sequence": "MEHFPGP",
+    "length": 7,
+    "peptide_class": "COGNITIVE",
+    "known_targets": ["BDNF", "TrkB pathway", "Melanocortin receptors"],
+    "canonical_targets": [
+      {
+        "name": "Melanocortin receptor 4",
+        "uniprot_id": "P32245",
+        "chembl_id": "CHEMBL259",
+        "gene_symbol": "MC4R",
+        "mechanism_role": "primary — ACTH(4-10)-derived MC receptor modulation"
+      },
+      {
+        "name": "BDNF/NT-3 growth factors receptor",
+        "uniprot_id": "Q16620",
+        "chembl_id": "CHEMBL4793",
+        "gene_symbol": "NTRK2",
+        "mechanism_role": "downstream — TrkB signalling"
+      }
+    ],
+    "mechanism_brief": "ACTH(4-10) analogue without endocrine activity; nootropic and neuroprotective via BDNF/NGF modulation.",
+    "biohacker_use": "300-600mcg intranasal daily for cognitive performance, post-stroke recovery research interest.",
+    "references": ["18496388"]
+  },
+  {
+    "name": "DSIP",
+    "aliases": "Delta sleep-inducing peptide",
+    "sequence": "WAGGDASGE",
+    "length": 9,
+    "peptide_class": "PERFORMANCE",
+    "known_targets": ["Sleep regulation (mechanism not fully characterised)"],
+    "canonical_targets": [],
+    "mechanism_brief": "Nonapeptide originally isolated from rabbit brain; promotes delta-wave EEG activity, may modulate ACTH and stress response.",
+    "biohacker_use": "100-300mcg subcutaneous before sleep. Used for sleep quality and stress modulation.",
+    "references": ["12504051"]
+  },
+  {
+    "name": "Epitalon",
+    "aliases": "Epithalon, Khavinson tetrapeptide",
+    "sequence": "AEDG",
+    "length": 4,
+    "peptide_class": "LONGEVITY",
+    "known_targets": ["Telomerase (TERT)", "Pineal gland regulation"],
+    "canonical_targets": [
+      {
+        "name": "Telomerase reverse transcriptase",
+        "uniprot_id": "O14746",
+        "chembl_id": "CHEMBL2916",
+        "gene_symbol": "TERT",
+        "mechanism_role": "primary — putative telomerase activator"
+      }
+    ],
+    "mechanism_brief": "Khavinson tetrapeptide; reported telomerase activation and pineal gland modulation in cell and animal models.",
+    "biohacker_use": "5-10mg subcutaneous courses (10-20 day cycles). Used in longevity-focused stacks.",
+    "references": ["12643948"]
+  },
+  {
+    "name": "FOXO4-DRI",
+    "aliases": "FOXO4-D-Retro-Inverso peptide",
+    "sequence": "LTLRKEPASEIAQSILEAYSQNGWANRRSGGKRPPPRRRQRRKKRG",
+    "length": 46,
+    "peptide_class": "LONGEVITY",
+    "known_targets": ["FOXO4", "p53"],
+    "canonical_targets": [
+      {
+        "name": "Cellular tumor antigen p53",
+        "uniprot_id": "P04637",
+        "chembl_id": "CHEMBL4096",
+        "gene_symbol": "TP53",
+        "mechanism_role": "primary — disrupts FOXO4-p53 interaction in senescent cells"
+      },
+      {
+        "name": "Forkhead box protein O4",
+        "uniprot_id": "P98177",
+        "chembl_id": null,
+        "gene_symbol": "FOXO4",
+        "mechanism_role": "primary — direct binding partner"
+      }
+    ],
+    "mechanism_brief": "D-retro-inverso peptide that disrupts FOXO4-p53 interaction, selectively inducing apoptosis in senescent cells (senolytic).",
+    "biohacker_use": "Investigational senolytic. Limited human dosing data; cycled administration discussed in research literature.",
+    "references": ["28340338"]
+  },
+  {
+    "name": "SS-31",
+    "aliases": "Elamipretide, Bendavia, MTP-131",
+    "sequence": "DArgDmtLysPhe",
+    "length": 4,
+    "peptide_class": "LONGEVITY",
+    "known_targets": ["Cardiolipin", "Mitochondrial inner membrane"],
+    "canonical_targets": [],
+    "mechanism_brief": "Mitochondria-targeted tetrapeptide that binds cardiolipin to stabilise the inner membrane and improve respiratory efficiency.",
+    "biohacker_use": "Investigational. Subcutaneous dosing studied in mitochondrial disease and primary mitochondrial myopathy trials.",
+    "references": ["22653057", "31345057"]
+  }
+]

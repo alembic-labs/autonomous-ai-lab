@@ -1,0 +1,60 @@
+# Локальная проверка без доменов и HTTPS.
+# Из папки deploy:  docker compose -f docker-compose.local.yml up -d --build
+#
+# После старта:
+#   фронт   http://localhost:3000
+#   API     http://localhost:8000/api/health
+#
+# Берёт секреты из deploy/.env (тот же файл, что для прода). Переопределяет только
+# CORS и URL фронта → бэкенду (чат и фолды работают как в бою).
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_local:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+      PDB_STORAGE_DIR: /app/pdb_storage
+    volumes:
+      - pdb_local:/app/pdb_storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+        NEXT_PUBLIC_LAB_3D_URL: ""
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: .env
+    depends_on:
+      - backend
+
+volumes:
+  postgres_local:
+  pdb_local:

@@ -1,0 +1,80 @@
+# ────────────────────────── secrets ──────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# ────────────────────────── python ──────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# ────────────────────────── node / next ──────────────────────────
+node_modules/
+.next/
+.turbo/
+.swc/
+.parcel-cache/
+.npm/
+*.tsbuildinfo
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ────────────────────────── vite / rollup ──────────────────────────
+**/dist/
+.vite/
+
+# ────────────────────────── editor / os ──────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db
+
+# ────────────────────────── local data / state ──────────────────────────
+alembic_labs_local.db
+*.sqlite
+*.sqlite-journal
+*.db-journal
+pdb_storage_local/
+**/pdb_storage/*
+!**/pdb_storage/.gitkeep
+
+# ────────────────────────── large 3-D assets (out of git) ──────────────────────────
+# Raw GLB / GLTF live outside git; pull them via release artefacts or a dedicated CDN.
+3d-lab/
+*.glb
+*.gltf
+*.fbx
+*.usdz
+
+# ────────────────────────── cursor / agent context ──────────────────────────
+CURSOR_PACK*.md
+.cursor/
+.cursorrules
+
+# ────────────────────────── misc ──────────────────────────
+coverage/
+.tmp/
+.cache/
+*.pid

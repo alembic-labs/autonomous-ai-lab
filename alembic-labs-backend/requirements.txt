@@ -1,0 +1,42 @@
+# ALEMBIC LABS — backend dependencies (Python 3.11+).
+# Pin minor versions to keep the agent loop predictable; bump deliberately.
+
+# Web framework
+fastapi>=0.115,<0.117
+uvicorn[standard]>=0.32,<0.36
+
+# DB
+SQLAlchemy[asyncio]>=2.0.30,<2.1
+greenlet>=3.0,<4
+asyncpg>=0.29,<0.31
+# Optional fallback driver for local dev with sqlite
+aiosqlite>=0.20,<0.22
+
+# Settings + validation
+pydantic>=2.7,<3
+pydantic-settings>=2.4,<3
+python-dotenv>=1.0,<2
+
+# Async HTTP / IO
+httpx>=0.27,<0.29
+anyio>=4.4,<5
+
+# AI providers
+anthropic>=0.40,<1.0
+replicate>=0.32,<2
+
+# Bio / sequence handling
+biopython>=1.83,<2
+
+# Scheduling
+APScheduler>=3.10,<4
+
+# Logging
+structlog>=24.1,<26
+
+# Solana on-chain logging — SHA-256 of fold core data committed via SPL Memo.
+# Pinned exactly: solders' Rust-backed types churn between minor versions and
+# we rely on the ``Keypair.from_base58_string`` + ``Message.new_with_blockhash``
+# call shapes specifically.
+solana==0.36.6
+solders==0.23.0

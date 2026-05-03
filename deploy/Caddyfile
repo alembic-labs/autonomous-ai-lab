@@ -1,0 +1,22 @@
+# TLS via Let's Encrypt (automatic). Requires DNS A/AAAA pointing here.
+
+alembic.bio {
+	encode gzip
+	reverse_proxy frontend:3000
+}
+
+www.alembic.bio {
+	redir https://alembic.bio{uri} permanent
+}
+
+api.alembic.bio {
+	encode gzip
+	reverse_proxy backend:8000
+}
+
+# 3D-laboratory сабдомен — включить, когда сервис `lab` будет добавлен в compose
+# и DNS A-запись `lab.alembic.bio` будет указывать на 178.18.240.104.
+# lab.alembic.bio {
+# 	encode gzip
+# 	reverse_proxy lab:80
+# }
