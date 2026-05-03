@@ -14,6 +14,8 @@
 <p align="center">
   <a href="https://alembic.bio"><img src="https://img.shields.io/badge/site-alembic.bio-ef3a4d?style=flat-square" alt="site"></a>
   <a href="https://twitter.com/alembiclabs"><img src="https://img.shields.io/badge/twitter-@alembiclabs-1da1f2?style=flat-square" alt="twitter"></a>
+  <a href="https://alembic.bio/lab"><img src="https://img.shields.io/badge/lab-running-44dd88?style=flat-square" alt="lab"></a>
+  <a href="https://alembic.bio/folds"><img src="https://img.shields.io/badge/folds-13+-ef3a4d?style=flat-square" alt="folds"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black?style=flat-square" alt="license"></a>
 </p>
 
@@ -37,6 +39,8 @@ RESEARCHER  →  LITERATURE ‖ CLINICAL  →  STRUCTURAL (Boltz-2 + adaptive Ch
                                        →  COMMUNICATOR  →  on-chain commit
 ```
 
+**See it in action:** [fold #8 — Selank C-terminal amidation](https://alembic.bio/folds/8) shows a complete refined fold with 3D structure, agent reports, on-chain hash, and full citation trail (pLDDT 90.1%).
+
 * **RESEARCHER** (Claude Opus) picks a peptide from a curated pool, formulates
   a *specific* modification hypothesis, and chooses a research focus
   (stability / affinity / selectivity / conformation / delivery / PK) and a
@@ -46,7 +50,7 @@ RESEARCHER  →  LITERATURE ‖ CLINICAL  →  STRUCTURAL (Boltz-2 + adaptive Ch
 * **LITERATURE** (Sonnet) pulls relevant abstracts from PubMed and bioRxiv.
 * **CLINICAL** (Sonnet) hits ChEMBL and UniProt for known binders, mechanism
   class, and dose hints from the biohacker community.
-* **STRUCTURAL** (Opus + Replicate Boltz-2 / Chai-1) runs the structure
+* **STRUCTURAL** (Opus + BioLM Boltz-2 / Chai-1) runs the structure
   prediction. Chai-1 is gated adaptively — only borderline pLDDT folds are
   re-validated, so we don't burn compute on confident hits.
 * **COMMUNICATOR** (Sonnet) renders the 14-section detailed report.
@@ -84,7 +88,7 @@ Each app keeps its own `README.md` with the local-dev quickstart.
 | Area              | Stack                                                         |
 |-------------------|---------------------------------------------------------------|
 | Agents            | Anthropic Claude (Opus + Sonnet), structured JSON I/O         |
-| Structure         | Replicate Boltz-2, Chai-1 (adaptive gating)                   |
+| Structure         | BioLM Boltz-2, Chai-1 (adaptive gating)                       |
 | Backend           | Python 3.11, FastAPI, SQLAlchemy 2 async, asyncpg, APScheduler|
 | DB                | Postgres 15                                                   |
 | Frontend          | Next.js 14 App Router, TypeScript, Tailwind, Mol\* viewer     |
@@ -102,7 +106,7 @@ Requires Docker Desktop and Node 20+. Set up the env files first:
 cp deploy/.env.example deploy/.env
 cp alembic-labs-backend/.env.example alembic-labs-backend/.env
 cp alembic-labs-frontend/.env.example alembic-labs-frontend/.env.local
-# fill in ANTHROPIC_API_KEY, REPLICATE_API_TOKEN, etc.
+# fill in ANTHROPIC_API_KEY, BIOLMAI_TOKEN, etc.
 ```
 
 Then either run everything in containers:
