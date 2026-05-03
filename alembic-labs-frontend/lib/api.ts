@@ -418,8 +418,11 @@ export async function listFolds(query: FoldsQuery = {}): Promise<FoldsListRespon
 }
 
 export async function getFold(id: number | string): Promise<FoldDetail> {
+  // No cache — folds are written incrementally by the orchestrator
+  // (Communicator can finish minutes after the page is first hit), so we
+  // always read fresh state and let the page itself stay ``force-dynamic``.
   const raw = await apiFetch<BackendFoldDetail>(`/api/folds/${id}`, {
-    revalidate: 60,
+    cache: "no-store",
   });
   return adaptDetail(raw);
 }
@@ -438,7 +441,7 @@ export async function getFoldMetrics(id: number | string): Promise<FoldMetrics> 
     binding_pic50: number | null;
   }
   const m = await apiFetch<BackendMetrics>(`/api/folds/${id}/metrics`, {
-    revalidate: 60,
+    cache: "no-store",
   });
   const perRes = (m.plddt_per_residue ?? []).map((p, i) => ({
     residue: i + 1,
