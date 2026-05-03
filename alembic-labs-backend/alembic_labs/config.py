@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     BIOLM_BOLTZ2_PATH: str = "/boltz2/predict/"
     BIOLM_CHAI1_PATH: str = "/chai1/predict/"
     BIOLM_TIMEOUT_SECONDS: int = 600
+    # Per-call cost estimates used to surface "Lab Spend" on the homepage —
+    # BioLM doesn't return a cost field on the predict response, so we
+    # multiply observed call counts by these constants. Calibrated from the
+    # BioLM billing dashboard (May 2026): Boltz-2 ≈ $0.172/call,
+    # Chai-1 ≈ $3.58/call. Override via .env when BioLM updates pricing.
+    BIOLM_BOLTZ2_COST_USD: float = 0.172
+    BIOLM_CHAI1_COST_USD: float = 3.577
 
     # --- Replicate (legacy fallback) ---
     REPLICATE_API_TOKEN: str = ""

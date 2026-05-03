@@ -41,6 +41,19 @@ async def lab_stats(db: AsyncSession = Depends(get_db)) -> LabStatsResponse:
     # Precompute the ratio so the frontend can render the badge unconditionally
     # without re-implementing divide-by-zero guards.
     ratio = round(runs / eligible, 4) if eligible else None
+
+    # ``total_cost_usd`` on the row tracks Anthropic spend only (it's
+    # accumulated from AgentRun.cost_usd inside the Communicator). BioLM
+    # doesn't return a price field on its predict response, so we estimate
+    # structural compute spend = (boltz2 calls × cost) + (chai1 calls × cost).
+    # Boltz-2 runs on every "eligible" fold (DISABLED folds — no creds, no
+    # target sequence — don't reach BioLM at all and are excluded from the
+    # eligible denominator), so ``eligible`` is the right Boltz-2 proxy.
+    structural_cost = (
+        eligible * settings.BIOLM_BOLTZ2_COST_USD
+        + runs * settings.BIOLM_CHAI1_COST_USD
+    )
+    total_cost_usd = round((row.total_cost_usd or 0.0) + structural_cost, 2)
     # On-chain ratio mirrors the same shape: "X / eligible (Y%)". The
     # eligible denominator is "folds with a publishable verdict" — i.e.
     # total_folds minus pending and failed. A simple proxy is
@@ -65,7 +78,7 @@ async def lab_stats(db: AsyncSession = Depends(get_db)) -> LabStatsResponse:
         days_running=days_running,
         agents_active=len(AGENT_NAMES),
         total_tokens_used=row.total_tokens_used,
-        total_cost_usd=row.total_cost_usd,
+        total_cost_usd=total_cost_usd,
         avg_cycle_seconds=row.avg_cycle_seconds,
         total_chai1_runs=runs,
         total_chai1_skipped=skipped,

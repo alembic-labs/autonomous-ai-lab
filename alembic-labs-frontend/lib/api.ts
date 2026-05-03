@@ -372,7 +372,10 @@ function adaptLabStats(b: BackendLabStats): LabStats {
     total_tokens: b.total_tokens_used,
     total_cost_usd: b.total_cost_usd ?? 0,
     avg_cycle_seconds: Math.round(b.avg_cycle_seconds),
-    avg_tokens_per_cycle: 0,
+    avg_tokens_per_cycle:
+      b.total_folds > 0
+        ? Math.round((b.total_tokens_used ?? 0) / b.total_folds)
+        : 0,
     total_chai1_runs: b.total_chai1_runs ?? 0,
     total_chai1_skipped: b.total_chai1_skipped ?? 0,
     chai1_eligible_folds: b.chai1_eligible_folds ?? 0,
