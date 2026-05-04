@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db.models import AgentRun, Fold
 from ..db.session import get_db
 from ..tools.solana_logger import explorer_url_for
+from .archive_renderer import archive_filename, build_folds_archive
 from .report_renderer import render_report_html, render_report_json, render_report_pdf
 from .schemas import (
     AgentTraceItem,
@@ -195,6 +196,40 @@ async def _agent_trace(db: AsyncSession, fold_id: int) -> list[AgentTraceItem]:
             )
         )
     return out
+
+
+@router.get("/archive.zip")
+async def download_archive(db: AsyncSession = Depends(get_db)) -> Response:
+    """One-shot ZIP of every publishable fold — README + INDEX.csv + per-fold artifacts.
+
+    Excludes PENDING / FAILED folds so the archive only carries data the lab
+    is willing to stand behind. Generated in-memory on every request — small
+    enough today (~30 folds × ~100KB each), and we sidestep cache-invalidation
+    pitfalls when a new cycle finishes between downloads.
+    """
+
+    rows = (
+        (
+            await db.execute(
+                select(Fold)
+                .where(Fold.fold_verdict.in_(["REFINED", "PROMISING", "DISCARDED"]))
+                .order_by(Fold.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    archive_bytes = build_folds_archive(rows, explorer_url_for=explorer_url_for)
+    filename = archive_filename()
+    return Response(
+        content=archive_bytes,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/{fold_ref}", response_model=FoldDetail)
