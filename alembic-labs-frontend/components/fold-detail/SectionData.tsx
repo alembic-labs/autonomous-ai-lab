@@ -1,4 +1,5 @@
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { getReportJsonUrl, getStructureUrl } from "@/lib/api";
 
 interface SectionDataProps {
   foldId: number;
@@ -62,13 +63,13 @@ export function SectionData({
       <SectionHeader index="13" title="data" />
       <div className="flex flex-wrap gap-3">
         <ActionLink
-          href={`/api/folds/${foldId}/report.json`}
+          href={getReportJsonUrl(foldId)}
           label="↓ download fold.json"
           download
         />
         {hasPdb ? (
           <ActionLink
-            href={`/api/folds/${foldId}/structure`}
+            href={getStructureUrl(foldId)}
             label="↓ download structure.pdb"
             download
           />

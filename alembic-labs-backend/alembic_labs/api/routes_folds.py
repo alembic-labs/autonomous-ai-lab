@@ -8,13 +8,14 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import AgentRun, Fold
 from ..db.session import get_db
 from ..tools.solana_logger import explorer_url_for
+from .report_renderer import render_report_html, render_report_json
 from .schemas import (
     AgentTraceItem,
     FoldDetail,
@@ -291,6 +292,57 @@ async def get_structure(
         raise HTTPException(status_code=404, detail="structure file missing on disk")
     return PlainTextResponse(
         path.read_text(encoding="utf-8"), media_type="chemical/x-pdb"
+    )
+
+
+def _slug_basename(fold: Fold) -> str:
+    """Stable filename stem for downloaded reports — ``0028-tb-500-lactam``."""
+    if fold.slug:
+        return fold.slug
+    return f"fold-{fold.id:04d}"
+
+
+@router.get("/{fold_ref}/report.html", response_class=HTMLResponse)
+@router.get("/{fold_ref}/report", response_class=HTMLResponse)
+async def get_report_html(
+    fold_ref: str, db: AsyncSession = Depends(get_db)
+) -> HTMLResponse:
+    """Standalone HTML report — single file, no external assets."""
+
+    fold = await _get_or_404(db, fold_ref)
+    explorer = explorer_url_for(fold.onchain_signature)
+    body = render_report_html(fold, explorer_url=explorer)
+    filename = f"{_slug_basename(fold)}-report.html"
+    return HTMLResponse(
+        content=body,
+        headers={
+            # ``inline`` so browsers preview the report when the user clicks
+            # the link, but the download attribute on the frontend anchor still
+            # forces "Save as…" — best of both UX paths.
+            "Content-Disposition": f'inline; filename="{filename}"',
+            # The orchestrator writes new fields to the fold incrementally, so
+            # treat these as fresh on every request.
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get("/{fold_ref}/report.json")
+async def get_report_json(
+    fold_ref: str, db: AsyncSession = Depends(get_db)
+) -> JSONResponse:
+    """Canonical JSON dump for the downloadable bundle."""
+
+    fold = await _get_or_404(db, fold_ref)
+    explorer = explorer_url_for(fold.onchain_signature)
+    payload = render_report_json(fold, explorer_url=explorer)
+    filename = f"{_slug_basename(fold)}.json"
+    return JSONResponse(
+        content=payload,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
     )
 
 

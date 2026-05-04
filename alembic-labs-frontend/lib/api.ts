@@ -477,6 +477,14 @@ export function getStructureUrl(id: number | string): string {
   return `${API_BASE}/api/folds/${id}/structure`;
 }
 
+export function getReportHtmlUrl(id: number | string): string {
+  return `${API_BASE}/api/folds/${id}/report.html`;
+}
+
+export function getReportJsonUrl(id: number | string): string {
+  return `${API_BASE}/api/folds/${id}/report.json`;
+}
+
 export async function getStructurePdb(id: number | string): Promise<string> {
   const res = await fetch(getStructureUrl(id));
   if (!res.ok) throw new Error(`Structure ${res.status} for fold ${id}`);

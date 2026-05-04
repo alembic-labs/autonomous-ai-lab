@@ -34,6 +34,10 @@ APScheduler>=3.10,<4
 # Logging
 structlog>=24.1,<26
 
+# Markdown → HTML for the standalone /report.html download (renders the
+# Communicator's research_brief_markdown into a self-contained printable page).
+markdown>=3.6,<4
+
 # Solana on-chain logging — SHA-256 of fold core data committed via SPL Memo.
 # Pinned exactly: solders' Rust-backed types churn between minor versions and
 # we rely on the ``Keypair.from_base58_string`` + ``Message.new_with_blockhash``
