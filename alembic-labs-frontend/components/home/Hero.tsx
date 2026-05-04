@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LinkButton } from "@/components/ui/Button";
+import { TokenAddress } from "./TokenAddress";
 
 export function Hero() {
   return (
@@ -23,6 +24,8 @@ export function Hero() {
           read the manifest →
         </Link>
       </div>
+
+      <TokenAddress />
     </section>
   );
 }
