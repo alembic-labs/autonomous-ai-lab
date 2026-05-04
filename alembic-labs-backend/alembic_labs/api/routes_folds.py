@@ -8,14 +8,14 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import AgentRun, Fold
 from ..db.session import get_db
 from ..tools.solana_logger import explorer_url_for
-from .report_renderer import render_report_html, render_report_json
+from .report_renderer import render_report_html, render_report_json, render_report_pdf
 from .schemas import (
     AgentTraceItem,
     FoldDetail,
@@ -303,7 +303,6 @@ def _slug_basename(fold: Fold) -> str:
 
 
 @router.get("/{fold_ref}/report.html", response_class=HTMLResponse)
-@router.get("/{fold_ref}/report", response_class=HTMLResponse)
 async def get_report_html(
     fold_ref: str, db: AsyncSession = Depends(get_db)
 ) -> HTMLResponse:
@@ -316,12 +315,30 @@ async def get_report_html(
     return HTMLResponse(
         content=body,
         headers={
-            # ``inline`` so browsers preview the report when the user clicks
-            # the link, but the download attribute on the frontend anchor still
-            # forces "Save as…" — best of both UX paths.
             "Content-Disposition": f'inline; filename="{filename}"',
             # The orchestrator writes new fields to the fold incrementally, so
             # treat these as fresh on every request.
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get("/{fold_ref}/report.pdf")
+@router.get("/{fold_ref}/report")
+async def get_report_pdf(
+    fold_ref: str, db: AsyncSession = Depends(get_db)
+) -> Response:
+    """PDF download — same content as /report.html, rendered via WeasyPrint."""
+
+    fold = await _get_or_404(db, fold_ref)
+    explorer = explorer_url_for(fold.onchain_signature)
+    pdf_bytes = render_report_pdf(fold, explorer_url=explorer)
+    filename = f"{_slug_basename(fold)}-report.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store",
         },
     )

@@ -481,6 +481,10 @@ export function getReportHtmlUrl(id: number | string): string {
   return `${API_BASE}/api/folds/${id}/report.html`;
 }
 
+export function getReportPdfUrl(id: number | string): string {
+  return `${API_BASE}/api/folds/${id}/report.pdf`;
+}
+
 export function getReportJsonUrl(id: number | string): string {
   return `${API_BASE}/api/folds/${id}/report.json`;
 }

@@ -283,6 +283,21 @@ def render_report_html(fold: Fold, *, explorer_url: str | None) -> str:
 </html>"""
 
 
+def render_report_pdf(fold: Fold, *, explorer_url: str | None) -> bytes:
+    """Render the same HTML report to a PDF byte string via WeasyPrint.
+
+    Imported lazily so that the rest of the API still works in environments
+    where the WeasyPrint native deps (Pango / Cairo) aren't installed — the
+    /report.pdf route would 500, but /report.html and /report.json keep
+    working unaffected.
+    """
+
+    from weasyprint import HTML  # local import — heavy native deps
+
+    body = render_report_html(fold, explorer_url=explorer_url)
+    return HTML(string=body).write_pdf()
+
+
 def render_report_json(fold: Fold, *, explorer_url: str | None) -> dict[str, Any]:
     """Build the canonical JSON dump for the fold's downloadable bundle.
 

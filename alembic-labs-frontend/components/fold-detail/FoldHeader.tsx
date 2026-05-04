@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { formatConfidence, formatDate, formatPercent } from "@/lib/format";
-import { getReportHtmlUrl } from "@/lib/api";
+import { getReportPdfUrl } from "@/lib/api";
 import type { FoldDetail } from "@/lib/types";
 
 interface FoldHeaderProps {
@@ -51,14 +51,13 @@ export function FoldHeader({ fold, pmid }: FoldHeaderProps) {
         </div>
 
         <a
-          href={getReportHtmlUrl(fold.id)}
-          target="_blank"
-          rel="noreferrer"
+          href={getReportPdfUrl(fold.id)}
+          download
           className="btn-bracket text-small self-start"
-          aria-label="Open report"
+          aria-label="Download PDF report"
         >
           <span className="text-text-muted">[</span>
-          <span>↓ download report</span>
+          <span>↓ download report.pdf</span>
           <span className="text-text-muted">]</span>
         </a>
       </div>

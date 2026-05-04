@@ -38,6 +38,10 @@ structlog>=24.1,<26
 # Communicator's research_brief_markdown into a self-contained printable page).
 markdown>=3.6,<4
 
+# WeasyPrint converts the HTML report to PDF for /report.pdf. Needs system
+# deps (libpango, libcairo, libgdk-pixbuf) — see deploy/backend.Dockerfile.
+weasyprint>=62,<64
+
 # Solana on-chain logging — SHA-256 of fold core data committed via SPL Memo.
 # Pinned exactly: solders' Rust-backed types churn between minor versions and
 # we rely on the ``Keypair.from_base58_string`` + ``Message.new_with_blockhash``
