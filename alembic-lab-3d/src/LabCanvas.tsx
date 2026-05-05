@@ -9,16 +9,16 @@ import { useAgentLive } from "./agents/agentLive";
 import { BRAND } from "./scene/brandPalette";
 import { LAB_GLB, SCIENTISTS } from "./scene/labSceneConfig";
 import { LabSceneContent } from "./scene/LabScene";
+import { CameraDirector } from "./scene/CameraDirector";
 import { PulsingAccentLights } from "./scene/PulsingAccentLights";
 
-// Camera defaults that put the viewer INSIDE the lab volume rather than
-// floating outside its corner. Target is the centre of the agent action
-// zone (anchors span roughly x∈[0, 8], z∈[-4, -0.5]); the camera sits
-// elevated and slightly in front of the action, with autoRotate enabled
-// so the scene drifts gently when the user isn't interacting.
+// Initial camera state. After mount the CameraDirector takes over and
+// drives a gentle left/right pendulum (clamped to the band where the
+// lab GLB actually has interior textures) plus a focus fly-in when the
+// user clicks an agent. Target / initial pos are kept in rough agreement
+// with the director's AMBIENT_TARGET so the first frame doesn't snap.
 const CAMERA_TARGET: [number, number, number] = [3.5, 1.4, -2.2];
 const CAMERA_INITIAL_POS: [number, number, number] = [3.5, 3.0, 3.6];
-const AUTO_ROTATE_SPEED = 0.35; // degrees-per-frame-ish — slow ambient drift
 
 export function LabCanvas() {
   const { orbitRef, editMode } = useLayoutEdit();
@@ -103,17 +103,20 @@ export function LabCanvas() {
         // band — no roof-cam, no looking up at the ceiling.
         minPolarAngle={Math.PI * 0.28}
         maxPolarAngle={Math.PI / 2.05}
-        minDistance={2.5}
+        minDistance={2.0}
         // Cap zoom-out so the user can't drift outside the building
         // and end up staring at the back of the GLB.
-        maxDistance={11}
+        maxDistance={10}
         enablePan
-        // Slow ambient orbit when the user isn't dragging; matches the
-        // 'feels alive' brief without being motion-sickness inducing.
-        // OrbitControls treats degrees-per-second when enableDamping is on.
-        autoRotate={!editMode}
-        autoRotateSpeed={AUTO_ROTATE_SPEED}
+        // Clamp horizontal rotation to the angles where the lab GLB has
+        // interior textures — beyond ±60° you start looking through the
+        // back of the building. Combined with the CameraDirector's
+        // pendulum (±22°) this means manual orbit also stays "inside".
+        minAzimuthAngle={-Math.PI / 3}
+        maxAzimuthAngle={Math.PI / 3}
+        enableDamping
       />
+      <CameraDirector controlsRef={orbitRef} />
     </Canvas>
   );
 }
