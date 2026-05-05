@@ -20,6 +20,7 @@ import { LabEmissivePulse } from "./labAmbientMotion";
 import { enableMeshShadows } from "./shadowUtils";
 import { TransformableAgent } from "./TransformableAgent";
 import { useLayoutEdit } from "../layoutEdit";
+import { useAgentLive } from "../agents/agentLive";
 import { useWander, type WanderState } from "./useWander";
 
 const IDLE_CLIP_KEYS = ["idle", "stand", "breathe", "rest", "wait"];
@@ -93,6 +94,7 @@ function ScientistModel({ slot }: { slot: ScientistSlot }) {
   const walkGltf = useGLTF(slot.url);
   const idleGltf = useGLTF(slot.idleUrl ?? slot.url);
   const { editMode } = useLayoutEdit();
+  const { setSelectedSlotId, selectedSlotId } = useAgentLive();
 
   const scene = useMemo(() => {
     // Plain scene.clone() breaks SkinnedMesh rigs: clones share/wrong skeleton → same spot + bad bounds.
@@ -176,8 +178,34 @@ function ScientistModel({ slot }: { slot: ScientistSlot }) {
     },
   });
 
+  // Click → select this agent in the live-status panel. We use stop-
+  // propagation so the empty-canvas handler in App.tsx (which clears the
+  // selection) doesn't immediately deselect on the same click.
+  const isSelected = selectedSlotId === slot.id;
+  const handleClick = (e: { stopPropagation: () => void }) => {
+    if (editMode) return;
+    e.stopPropagation();
+    setSelectedSlotId(isSelected ? null : slot.id);
+  };
+  const handlePointerOver = editMode
+    ? undefined
+    : (e: { stopPropagation: () => void }) => {
+        e.stopPropagation();
+        document.body.style.cursor = "pointer";
+      };
+  const handlePointerOut = editMode
+    ? undefined
+    : () => {
+        document.body.style.cursor = "";
+      };
+
   return (
-    <group ref={wanderRef}>
+    <group
+      ref={wanderRef}
+      onClick={handleClick}
+      onPointerOver={handlePointerOver}
+      onPointerOut={handlePointerOut}
+    >
       <primitive object={scene} dispose={null} />
     </group>
   );

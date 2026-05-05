@@ -155,3 +155,150 @@ a:hover {
   letter-spacing: 0.08em;
   font-size: 12px;
 }
+
+/* ── Agent info panel (live status overlay) ─────────────────────────── */
+
+.agent-panel {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: 14px 16px 16px;
+  background: rgba(10, 10, 10, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--brand);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  z-index: 10;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.agent-panel-close {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.agent-panel-close:hover {
+  color: var(--text-primary);
+}
+
+.agent-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+
+.agent-panel-role {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.agent-panel-zone {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.agent-panel-desc {
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  font-size: 11px;
+}
+
+.agent-panel-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.agent-panel-dot-active {
+  background: #44dd88;
+  box-shadow: 0 0 8px rgba(68, 221, 136, 0.6);
+}
+
+.agent-panel-dot-error {
+  background: #ff4466;
+}
+
+.agent-panel-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.agent-panel-row:first-of-type {
+  border-top: none;
+  padding-top: 6px;
+}
+
+.agent-panel-key {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  flex: 0 0 80px;
+}
+
+.agent-panel-val {
+  color: var(--text-primary);
+  flex: 1;
+  word-break: break-word;
+}
+
+.agent-panel-status {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+
+.agent-panel-status-active {
+  color: #44dd88;
+}
+
+.agent-panel-status-error {
+  color: #ff4466;
+}
+
+.agent-panel-status-idle {
+  color: var(--text-secondary);
+}
+
+.agent-panel-link {
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.agent-panel-link:hover {
+  text-decoration: underline;
+}
+
+.agent-panel-muted {
+  color: var(--text-muted);
+}
+
+.agent-panel-error {
+  color: #ff7766;
+  font-size: 11px;
+}

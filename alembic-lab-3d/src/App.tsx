@@ -1,5 +1,7 @@
 import { LabCanvas } from "./LabCanvas";
 import { LayoutEditProvider, useLayoutEdit } from "./layoutEdit";
+import { AgentLiveProvider } from "./agents/agentLive";
+import { AgentInfoPanel } from "./agents/AgentInfoPanel";
 
 const mainSite =
   import.meta.env.VITE_MAIN_SITE_URL || "https://alembic.bio";
@@ -72,13 +74,14 @@ function AppInner() {
           <span className="app-title">ALEMBIC LABS — 3d floor</span>
           <nav className="app-nav">
             <a href={mainSite}>main site</a>
-            <span className="app-muted">drag · scroll zoom</span>
+            <span className="app-muted">click an agent · drag · scroll</span>
           </nav>
         </div>
         <EditToolbar />
       </header>
       <div className="app-canvas-wrap">
         <LabCanvas />
+        <AgentInfoPanel />
       </div>
     </>
   );
@@ -87,7 +90,9 @@ function AppInner() {
 export function App() {
   return (
     <LayoutEditProvider>
-      <AppInner />
+      <AgentLiveProvider>
+        <AppInner />
+      </AgentLiveProvider>
     </LayoutEditProvider>
   );
 }

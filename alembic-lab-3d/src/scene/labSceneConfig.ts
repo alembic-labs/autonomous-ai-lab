@@ -1,5 +1,17 @@
 export const LAB_GLB = "/3d-lab/sci-fi_lab.glb";
 
+/**
+ * Maps a 3D-lab slot to one of the five backend agent roles. The order
+ * matches the AGENT_NAMES tuple in alembic-labs-backend's models.py so
+ * that ``GET /api/agents/status`` can be looked up by role.
+ */
+export type AgentRole =
+  | "RESEARCHER"
+  | "LITERATURE"
+  | "STRUCTURAL"
+  | "CLINICAL"
+  | "COMMUNICATOR";
+
 export type WanderTuning = {
   /** Max radius (in world units, ≈meters) the agent strays from its anchor. */
   radius: number;
@@ -14,6 +26,8 @@ export type WanderTuning = {
 
 export type ScientistSlot = {
   id: string;
+  /** Backend agent role this slot represents. Drives the live-status hookup. */
+  agentRole: AgentRole;
   /**
    * Primary GLB — supplies the rigged mesh + skeleton + walk-cycle clip.
    * Meshy's animation export packs the full character into every clip
@@ -35,9 +49,10 @@ export type ScientistSlot = {
 };
 
 export const WANDER_DEFAULTS: WanderTuning = {
-  // Bigger radius so the strolls cover real lab ground rather than
-  // jittering next to the workstation. Per-slot override available.
-  radius: 2.5,
+  // Conservative default — the lab interior is tight (~12u footprint with
+  // furniture) and we have no navmesh to keep agents off the walls. The
+  // wall-adjacent slots (1, 2, 3) override this to a smaller value below.
+  radius: 1.4,
   speed: 0.55,
   turnDamp: 0.22,
   // Long home-pause: scientists should LOOK like they're working at their
@@ -49,28 +64,35 @@ export const WANDER_DEFAULTS: WanderTuning = {
 };
 
 /** Snapshots from downloaded lab-layout.json (manual placement in viewer). */
-// Final model→slot mapping after two rounds of swaps:
-//   slot 1 (GATE 07)            → scientist-3
-//   slot 2 (green workstation)  → scientist-5
-//   slot 3 (left blue tanks)    → scientist-1   ← Meshy clip-file swap
-//   slot 4 (center tile)        → scientist-4
-//   slot 5 (chamber floor)      → scientist-2
+// Slot → backend agent role and model assignment. Positions are kept in
+// sync with public/3d-lab/lab-layout.json (download from edit mode).
+//
+//   slot 1 (GATE 07, RESEARCHER)        → scientist-3
+//   slot 2 (green workstation, LITERATURE) → scientist-5
+//   slot 3 (left blue tanks, STRUCTURAL)   → scientist-1 (Meshy clip-file swap)
+//   slot 4 (center tile, CLINICAL)         → scientist-4
+//   slot 5 (chamber floor, COMMUNICATOR)   → scientist-2
 export const SCIENTISTS: ScientistSlot[] = [
   {
     id: "1",
+    agentRole: "RESEARCHER",
     zone: "1 · floor right of GATE 07",
     url: "/3d-lab/scientist-3-walk.glb",
     idleUrl: "/3d-lab/scientist-3-idle.glb",
-    position: [8.175426042597449, 0.02577319356117805, -4.3035778789495165],
+    position: [7.840038856989182, 0.02577319356117805, -4.3035778789495165],
     rotation: [-3.141592653589793, 1.4551804632888736, -3.141592653589793],
+    // Wall-adjacent slot — small radius keeps strolls off the wall.
+    wander: { radius: 1.0 },
   },
   {
     id: "2",
+    agentRole: "LITERATURE",
     zone: "2 · green workstation wall",
     url: "/3d-lab/scientist-5-walk.glb",
     idleUrl: "/3d-lab/scientist-5-idle.glb",
     position: [7.678855221765017, 0.06042707976589268, -1.0638662251660016],
-    rotation: [-3.141592653589793, 1.4400210547869952, -3.141592653589793],
+    rotation: [-3.141592653589793, 0.369104816108874, -3.141592653589793],
+    wander: { radius: 1.0 },
   },
   {
     // NOTE: Meshy swapped scientist-1's clip files — the "-walk" GLB
@@ -78,14 +100,19 @@ export const SCIENTISTS: ScientistSlot[] = [
     // contains the walking clip ("Texting_Walk"). The URLs below cross
     // them so each clip lands in the right role.
     id: "3",
+    agentRole: "STRUCTURAL",
     zone: "3 · left blue tanks / pipes",
     url: "/3d-lab/scientist-1-idle.glb",
     idleUrl: "/3d-lab/scientist-1-walk.glb",
-    position: [4.021386137837405, 0.056348486161091546, -1.5024284946462654],
-    rotation: [3.119599245400525, 0.07009911961135065, -3.1330113468574026],
+    position: [3.9819030068548122, -0.03329913225105001, -1.4765850322723677],
+    rotation: [3.1183503969865987, -0.33638788336252434, 3.1409602313454115],
+    // User reported #3 wandering past the lab wall on the right; tight
+    // radius keeps the strolls inside the central aisle.
+    wander: { radius: 0.9 },
   },
   {
     id: "4",
+    agentRole: "CLINICAL",
     zone: "4 · center tile (table ↔ cylinder)",
     url: "/3d-lab/scientist-4-walk.glb",
     idleUrl: "/3d-lab/scientist-4-idle.glb",
@@ -94,11 +121,12 @@ export const SCIENTISTS: ScientistSlot[] = [
   },
   {
     id: "5",
+    agentRole: "COMMUNICATOR",
     zone: "5 · floor near specimen chamber",
     url: "/3d-lab/scientist-2-walk.glb",
     idleUrl: "/3d-lab/scientist-2-idle.glb",
-    position: [0.19763748807533577, 0.05242026540169442, -0.501541107009971],
-    rotation: [-3.141592653589793, 1.4905378342005715, -3.141592653589793],
+    position: [0.09661040177628033, 0.05242026540169442, -0.5082157680367915],
+    rotation: [-3.141592653589793, 1.301001325303724, -3.141592653589793],
   },
 ];
 
