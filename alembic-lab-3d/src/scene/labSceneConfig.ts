@@ -49,31 +49,38 @@ export const WANDER_DEFAULTS: WanderTuning = {
 };
 
 /** Snapshots from downloaded lab-layout.json (manual placement in viewer). */
+// Final model→slot mapping after two rounds of swaps:
+//   slot 1 (GATE 07)            → scientist-3
+//   slot 2 (green workstation)  → scientist-5
+//   slot 3 (left blue tanks)    → scientist-1   ← Meshy clip-file swap
+//   slot 4 (center tile)        → scientist-4
+//   slot 5 (chamber floor)      → scientist-2
 export const SCIENTISTS: ScientistSlot[] = [
   {
-    // Slot 1 ↔ 5 model swap: this slot now renders scientist-5's GLBs.
     id: "1",
     zone: "1 · floor right of GATE 07",
-    url: "/3d-lab/scientist-5-walk.glb",
-    idleUrl: "/3d-lab/scientist-5-idle.glb",
+    url: "/3d-lab/scientist-3-walk.glb",
+    idleUrl: "/3d-lab/scientist-3-idle.glb",
     position: [8.175426042597449, 0.02577319356117805, -4.3035778789495165],
     rotation: [-3.141592653589793, 1.4551804632888736, -3.141592653589793],
   },
   {
-    // Slot 2 ↔ 3 model swap: this slot now renders scientist-3's GLBs.
     id: "2",
     zone: "2 · green workstation wall",
-    url: "/3d-lab/scientist-3-walk.glb",
-    idleUrl: "/3d-lab/scientist-3-idle.glb",
+    url: "/3d-lab/scientist-5-walk.glb",
+    idleUrl: "/3d-lab/scientist-5-idle.glb",
     position: [7.678855221765017, 0.06042707976589268, -1.0638662251660016],
     rotation: [-3.141592653589793, 1.4400210547869952, -3.141592653589793],
   },
   {
-    // Slot 2 ↔ 3 model swap: this slot now renders scientist-2's GLBs.
+    // NOTE: Meshy swapped scientist-1's clip files — the "-walk" GLB
+    // actually contains an idle clip ("Idle_13") and the "-idle" GLB
+    // contains the walking clip ("Texting_Walk"). The URLs below cross
+    // them so each clip lands in the right role.
     id: "3",
     zone: "3 · left blue tanks / pipes",
-    url: "/3d-lab/scientist-2-walk.glb",
-    idleUrl: "/3d-lab/scientist-2-idle.glb",
+    url: "/3d-lab/scientist-1-idle.glb",
+    idleUrl: "/3d-lab/scientist-1-walk.glb",
     position: [4.021386137837405, 0.056348486161091546, -1.5024284946462654],
     rotation: [3.119599245400525, 0.07009911961135065, -3.1330113468574026],
   },
@@ -86,15 +93,10 @@ export const SCIENTISTS: ScientistSlot[] = [
     rotation: [3.141592653589793, -0.02806375087044089, 3.141592653589793],
   },
   {
-    // Slot 1 ↔ 5 model swap: this slot now renders scientist-1's GLBs.
-    // NOTE: Meshy swapped scientist-1's clip files — the "-walk" GLB
-    // actually contains an idle clip ("Idle_13") and the "-idle" GLB
-    // contains the walking clip ("Texting_Walk"). The URLs below cross
-    // them so each clip lands in the right role.
     id: "5",
     zone: "5 · floor near specimen chamber",
-    url: "/3d-lab/scientist-1-idle.glb",
-    idleUrl: "/3d-lab/scientist-1-walk.glb",
+    url: "/3d-lab/scientist-2-walk.glb",
+    idleUrl: "/3d-lab/scientist-2-idle.glb",
     position: [0.19763748807533577, 0.05242026540169442, -0.501541107009971],
     rotation: [-3.141592653589793, 1.4905378342005715, -3.141592653589793],
   },
