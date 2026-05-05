@@ -14,9 +14,14 @@ api.alembic.bio {
 	reverse_proxy backend:8000
 }
 
-# 3D-laboratory сабдомен — включить, когда сервис `lab` будет добавлен в compose
-# и DNS A-запись `lab.alembic.bio` будет указывать на 178.18.240.104.
-# lab.alembic.bio {
-# 	encode gzip
-# 	reverse_proxy lab:80
-# }
+lab.alembic.bio {
+	encode gzip
+	# Same-origin /api/* proxy: the Vite dev server proxies /api → backend
+	# locally, and we keep that contract in production by routing /api/*
+	# through Caddy to the backend container. This way the lab can use
+	# bare /api/agents/status URLs without ever tripping CORS.
+	@api path /api/*
+	reverse_proxy @api backend:8000
+
+	reverse_proxy lab:80
+}

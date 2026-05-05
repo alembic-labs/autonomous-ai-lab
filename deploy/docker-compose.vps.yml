@@ -28,7 +28,7 @@ services:
     env_file: .env
     environment:
       PDB_STORAGE_DIR: /app/pdb_storage
-      CORS_ALLOWED_ORIGINS: "https://alembic.bio,https://www.alembic.bio,http://178.18.240.104:18030,http://localhost:18030"
+      CORS_ALLOWED_ORIGINS: "https://alembic.bio,https://www.alembic.bio,https://lab.alembic.bio,http://178.18.240.104:18030,http://localhost:18030"
     volumes:
       - alembic_pdb:/app/pdb_storage
     depends_on:
@@ -41,11 +41,20 @@ services:
       dockerfile: deploy/frontend.Dockerfile
       args:
         NEXT_PUBLIC_API_URL: https://api.alembic.bio
-        NEXT_PUBLIC_LAB_3D_URL: ""
+        NEXT_PUBLIC_LAB_3D_URL: https://lab.alembic.bio
     restart: unless-stopped
     ports:
       - "18030:3000"
     env_file: .env
+    depends_on:
+      - backend
+
+  lab:
+    build:
+      context: ..
+      dockerfile: deploy/lab.Dockerfile
+    restart: unless-stopped
+    # No host port — accessed only via Caddy (lab.alembic.bio → lab:80).
     depends_on:
       - backend
 
@@ -63,6 +72,7 @@ services:
     depends_on:
       - backend
       - frontend
+      - lab
 
 volumes:
   alembic_pg:
