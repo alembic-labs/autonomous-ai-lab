@@ -241,18 +241,74 @@ async def _run(
     return normalised
 
 
+_BASE_BOLTZ2_PARAMS: dict[str, Any] = {
+    "include": ["pae", "plddt"],
+    "diffusion_samples": 1,
+}
+
+
+# Boltz-2's affinity head returns a binary binder probability and a
+# log10(IC50)-style affinity value when ``params.affinity.binder`` names
+# a chain. The head was trained on protein-ligand pairs (small molecules),
+# so on protein-protein complexes the BioLM gateway sometimes returns a
+# 400 "Boltz prediction did not produce an output structure" — the worker
+# crashes silently. We still want the affinity numbers when they're
+# available, so the call site below tries ONCE with affinity enabled and
+# falls back to the structure-only request when BioLM rejects it. Sampling
+# steps capped at 50 (vs default 200) — enough resolution for the binary
+# classifier and keeps the per-call cost bounded. MW correction is OFF
+# because peptides are 2-4 kDa, not drug-like small molecules.
+_AFFINITY_PARAMS: dict[str, Any] = {
+    "affinity": {"binder": "A"},
+    "affinity_mw_correction": False,
+    "sampling_steps_affinity": 50,
+    "diffusion_samples_affinity": 5,
+}
+
+
+def _affinity_failure(result: dict[str, Any]) -> bool:
+    """True if the Boltz-2 result looks like an affinity-related rejection.
+
+    BioLM returns ``400 Boltz prediction did not produce an output
+    structure`` when the affinity head crashes on a protein-only complex.
+    The error string is stable enough to match — and we additionally
+    require that the result has no PDB so we never throw away a partial
+    success.
+    """
+    if result.get("success"):
+        return False
+    if result.get("pdb_text"):
+        return False
+    err = (result.get("error") or "").lower()
+    return "did not produce" in err or "no output" in err
+
+
 async def run_boltz2_fold(
     peptide_sequence: str,
     target_sequence: str | None = None,
     target_uniprot: str | None = None,
 ) -> dict[str, Any]:
     target = await _resolve_target_sequence(target_sequence, target_uniprot)
-    return await _run(
-        settings.BIOLM_BOLTZ2_PATH,
-        peptide_sequence,
-        target,
-        params={"include": ["pae", "plddt"], "diffusion_samples": 1},
+
+    # Try with affinity first. If BioLM 400s with the "no output" pattern
+    # (almost certainly the affinity head choking on a protein-protein
+    # complex), retry without affinity so the cycle still gets a structure.
+    primary_params = {**_BASE_BOLTZ2_PARAMS, **_AFFINITY_PARAMS}
+    result = await _run(
+        settings.BIOLM_BOLTZ2_PATH, peptide_sequence, target, params=primary_params
     )
+    if _affinity_failure(result):
+        log.info(
+            "alembic.biolm.affinity_fallback",
+            error=(result.get("error") or "")[:200],
+        )
+        result = await _run(
+            settings.BIOLM_BOLTZ2_PATH,
+            peptide_sequence,
+            target,
+            params=_BASE_BOLTZ2_PARAMS,
+        )
+    return result
 
 
 async def run_chai1_fold(

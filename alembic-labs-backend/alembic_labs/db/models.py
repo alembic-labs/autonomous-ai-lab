@@ -100,6 +100,13 @@ class Fold(Base):
     binding_probability: Mapped[float | None] = mapped_column(Float)
     binding_pic50: Mapped[float | None] = mapped_column(Float)
 
+    # Set when the orchestrator's pre-flight predictability gate refuses
+    # the fold (lipid target, missing UniProt, sub-resolution peptide
+    # length, etc.). Persisted so the Communicator + frontend can surface
+    # WHY the fold was DISCARDED without re-running the gate. NULL means
+    # "either succeeded or DISCARDED for non-tool-limit reasons".
+    discard_reason: Mapped[str | None] = mapped_column(Text)
+
     # --- Clinical outputs ---
     known_activity: Mapped[str | None] = mapped_column(Text)
     biohacker_use: Mapped[str | None] = mapped_column(Text)

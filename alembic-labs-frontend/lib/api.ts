@@ -120,6 +120,7 @@ interface BackendFoldDetail extends BackendFoldListItem {
   works_cited: Record<string, unknown>[] | null;
   executive_summary: string | null;
   tweet_draft: string | null;
+  discard_reason: string | null;
   updated_at: string;
 }
 
@@ -331,6 +332,7 @@ function adaptDetail(b: BackendFoldDetail): FoldDetail {
     status: toFoldStatus(b.status, b.fold_verdict),
     fold_verdict: toFoldVerdict(b.fold_verdict),
     predicted_binding_change: b.predicted_binding_change,
+    discard_reason: b.discard_reason ?? null,
     updated_at: b.updated_at,
   };
 }

@@ -140,6 +140,12 @@ class FoldDetail(BaseModel):
     status: str
     fold_verdict: str | None = None
     predicted_binding_change: float | None = None
+    # Set when the orchestrator's predictability gate refused the fold
+    # before Structural ran (lipid target, missing UniProt, sub-resolution
+    # peptide length, etc.). NULL for normal DISCARDED folds and for any
+    # fold that cleared the gate. The frontend uses this to render the
+    # tool-limit-focused DISCARDED template variant.
+    discard_reason: str | None = None
     # ``executive_summary`` is the short, sharable summary rendered at the top
     # of section 04. ``tweet_draft`` is reserved for the Twitter integration
     # (different format, max 280 chars).

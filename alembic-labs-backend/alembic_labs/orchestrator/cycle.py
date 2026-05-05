@@ -26,6 +26,7 @@ from ..db.models import Fold, LabStat
 from ..db.session import SessionLocal
 from ..logging_setup import get_logger
 from ..tools import solana_logger
+from ..tools.structural_limits import target_is_predictable
 
 log = get_logger(__name__)
 
@@ -230,22 +231,56 @@ async def run_distillation_cycle() -> Fold | None:
             seconds=round(time.monotonic() - t0, 2),
         )
 
-        # 3. STRUCTURAL — fatal on failure.
-        try:
-            t0 = time.monotonic()
-            await structural.run_structural(session, fold)
-            cycle_log.info(
-                "alembic.cycle.structural.done",
-                seconds=round(time.monotonic() - t0, 2),
-                chai1_decision=fold.chai1_gated_decision,
+        # 2.5. PREDICTABILITY GATE — refuse folds Boltz-2/Chai-1 cannot
+        # adjudicate (lipid targets, missing UniProt, sub-resolution
+        # peptides) BEFORE we burn the structural budget on them. Folds
+        # that hit the gate skip Structural entirely and go straight to
+        # the Communicator (which renders the DISCARDED tool-limit
+        # template). Saves ~$1.50-2.00 per refused fold.
+        ok, reason = target_is_predictable(
+            target_protein=fold.target_protein,
+            target_uniprot=fold.target_uniprot_id,
+        )
+        gate_skipped_structural = False
+        if not ok:
+            cycle_log.warning(
+                "alembic.cycle.predictability_gate.blocked",
+                reason=reason,
             )
-            await _bump_chai1_counters(session, fold.chai1_gated_decision)
-        except Exception as err:  # noqa: BLE001
-            cycle_log.warning("alembic.cycle.structural.failed", error=str(err))
-            await _mark_failed(session, fold_id, f"structural: {err}")
-            return fold
+            fold.fold_verdict = "DISCARDED"
+            fold.status = "DISCARDED"
+            fold.discard_reason = f"target_not_predictable: {reason}"
+            # Surface a placeholder structural caption so the report has
+            # *something* to render in the structure section even though
+            # we never actually ran Boltz-2.
+            if not fold.structural_caption:
+                fold.structural_caption = (
+                    "Structure prediction was not attempted — the orchestrator's "
+                    "predictability gate refused this fold (see discard_reason)."
+                )
+            await session.commit()
+            gate_skipped_structural = True
+
+        # 3. STRUCTURAL — fatal on failure (skipped if gated).
+        if not gate_skipped_structural:
+            try:
+                t0 = time.monotonic()
+                await structural.run_structural(session, fold)
+                cycle_log.info(
+                    "alembic.cycle.structural.done",
+                    seconds=round(time.monotonic() - t0, 2),
+                    chai1_decision=fold.chai1_gated_decision,
+                )
+                await _bump_chai1_counters(session, fold.chai1_gated_decision)
+            except Exception as err:  # noqa: BLE001
+                cycle_log.warning(
+                    "alembic.cycle.structural.failed", error=str(err)
+                )
+                await _mark_failed(session, fold_id, f"structural: {err}")
+                return fold
 
         # 4. COMMUNICATOR — non-fatal (fold has useful data without it).
+        communicator_failed = False
         try:
             t0 = time.monotonic()
             await communicator.run_communicator(session, fold)
@@ -255,10 +290,41 @@ async def run_distillation_cycle() -> Fold | None:
             )
         except Exception as err:  # noqa: BLE001
             cycle_log.warning("alembic.cycle.communicator.failed", error=str(err))
-            # Leave fold.status as set by Structural verdict, or PENDING.
-            if not fold.status or fold.status == "PENDING":
-                fold.status = "PENDING"
-                await session.commit()
+            communicator_failed = True
+
+        # Communicator's internal handler rolls back the session on failure,
+        # which expires every loaded ORM attribute on ``fold``. The slug /
+        # on-chain / stats steps that follow would then trigger an async
+        # lazy-load on the broken session and raise MissingGreenlet,
+        # masking the real Communicator error. When this happens, run the
+        # rest of the cycle in a *fresh* session against a re-fetched fold
+        # so the cycle still produces a slug + on-chain commit.
+        if communicator_failed:
+            async with SessionLocal() as recover:
+                recovered = await recover.get(Fold, fold_id)
+                if recovered is None:
+                    cycle_log.warning(
+                        "alembic.cycle.fold_disappeared", fold_id=fold_id
+                    )
+                    return None
+                if not recovered.status or recovered.status == "PENDING":
+                    recovered.status = "PENDING"
+                    await recover.commit()
+                await _ensure_slug(recover, recovered)
+                try:
+                    await _log_onchain(recover, recovered)
+                except Exception as err:  # noqa: BLE001
+                    cycle_log.warning(
+                        "alembic.cycle.onchain.failed", error=str(err)
+                    )
+                elapsed = time.monotonic() - started
+                await _update_avg_cycle_seconds(recover, elapsed)
+                cycle_log.info(
+                    "alembic.cycle.done",
+                    status=recovered.status,
+                    seconds=round(elapsed, 2),
+                )
+                return recovered
 
         await _ensure_slug(session, fold)
 

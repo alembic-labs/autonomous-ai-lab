@@ -298,6 +298,7 @@ async def get_fold(
         status=fold.status,
         fold_verdict=fold.fold_verdict,
         predicted_binding_change=fold.predicted_binding_change,
+        discard_reason=fold.discard_reason,
         executive_summary=fold.executive_summary,
         tweet_draft=fold.tweet_draft,
         created_at=fold.created_at,

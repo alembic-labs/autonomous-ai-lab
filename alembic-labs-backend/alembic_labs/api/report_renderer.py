@@ -79,6 +79,15 @@ pre.seq, code.seq {
   margin-top: 24px; padding: 12px 16px; border: 1px dashed #aaa;
   font-size: 12px; color: #555; word-break: break-all;
 }
+.discard {
+  margin-top: 18px; padding: 14px 18px; border-left: 3px solid #ef3a4d;
+  background: #fff4f5; color: #5a1a22; font-size: 13px;
+}
+.discard .label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
+  color: #ef3a4d; font-weight: 700; margin-bottom: 4px;
+}
+.discard p { margin: 0; }
 .onchain .label {
   text-transform: uppercase; letter-spacing: 0.12em; color: #999;
   font-size: 10px; margin-right: 6px;
@@ -238,6 +247,18 @@ def render_report_html(fold: Fold, *, explorer_url: str | None) -> str:
     </div>
     """
 
+    discard_html = ""
+    if fold.discard_reason:
+        # Render the orchestrator's gate reason as a callout right under the
+        # hero numbers — it's the most important context for understanding
+        # why the fold was DISCARDED before any LLM narrative starts.
+        discard_html = f"""
+        <div class='discard'>
+          <div class='label'>Discarded by predictability gate</div>
+          <p>{_esc(fold.discard_reason)}</p>
+        </div>
+        """
+
     body = f"""
     <p class='eyebrow'>distillation №{fold.id} · alembic labs</p>
     <h1>{_esc(fold.peptide_name)} <span class='brand'>—</span> {_esc(fold.modification_description)}</h1>
@@ -245,6 +266,7 @@ def render_report_html(fold: Fold, *, explorer_url: str | None) -> str:
     <div class='badges'>{badges_html}</div>
 
     {hero_html}
+    {discard_html}
 
     <h2>TLDR</h2>
     <p>{_esc(fold.ai_analysis_tldr)}</p>
@@ -313,6 +335,7 @@ def render_report_json(fold: Fold, *, explorer_url: str | None) -> dict[str, Any
         "title": fold.title,
         "status": fold.status,
         "fold_verdict": fold.fold_verdict,
+        "discard_reason": fold.discard_reason,
         "peptide": {
             "name": fold.peptide_name,
             "class": fold.peptide_class,

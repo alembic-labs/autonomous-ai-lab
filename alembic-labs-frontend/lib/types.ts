@@ -201,6 +201,11 @@ export interface FoldDetail extends FoldListItem {
   status: FoldStatus;
   fold_verdict: FoldVerdict | null;
   predicted_binding_change: number | null;
+  // Set by the backend's predictability gate when the fold was DISCARDED
+  // *before* Structural ran (lipid target, missing UniProt, sub-resolution
+  // peptide length, etc.). NULL for normal folds and for DISCARDED folds
+  // that ran the full pipeline. Surfaced as a callout in section 02.
+  discard_reason: string | null;
   updated_at: string;
 }
 

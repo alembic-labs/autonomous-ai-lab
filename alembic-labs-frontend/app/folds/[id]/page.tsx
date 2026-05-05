@@ -104,6 +104,7 @@ export default async function FoldDetailPage({ params }: FoldDetailPageProps) {
       <SectionAIAnalysis
         tldr={fold.tldr}
         detailed={fold.detailed_analysis}
+        discardReason={fold.discard_reason}
       />
 
       <SectionResearchData

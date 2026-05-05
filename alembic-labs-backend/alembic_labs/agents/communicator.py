@@ -103,12 +103,42 @@ If PROMISING (moderate signal — interesting but not headline):
 ## Predicted properties (where signal is moderate)
 ## What would strengthen this signal (additional predictions / experiments)
 
-If DISCARDED (biologically uninformative — predictors worked, signal weak):
-## Mechanism of action (background)
-## Modification hypothesis (what we tested)
-## Why the prediction was uninformative (technical analysis of the metrics)
-## What this tells us (negative results are data — what does it rule out?)
-## Alternative hypotheses to test (avoid the failure mode)
+If DISCARDED (predictors couldn't adjudicate — DOES NOT mean "disproved"):
+Use the following SIX sections in this order — keep the report shorter
+than the REFINED template, and explicitly emphasise the tool-limit
+nature of the result. If the user message includes a ``DISCARD REASON``
+line (set when the orchestrator's predictability gate refused the fold
+before Structural ever ran), open the TLDR with that exact reason.
+
+## TLDR
+State clearly that this fold was DISCARDED and give the primary reason
+in one sentence — distinguish "tool-limit failure" (sub-resolution
+peptide length, lipid target, AlphaFold-blind chemistry, missing
+UniProt) from "biological invalidation" (structure clean but predicted
+non-binder).
+
+## What we tried
+The hypothesis that was tested (1-2 paragraphs).
+
+## Why it was discarded
+Specific tool limitations or biological reasons. If a discard_reason
+field was set by the orchestrator, lead with it. Otherwise pull from
+the structural caveats (low pLDDT, ensemble disagreement, low binder
+probability, etc.).
+
+## What this doesn't mean
+Explicit, mandatory: DISCARDED is not "disproved" — it's "couldn't be
+evaluated by current tools" (or, for binder-probability downgrades,
+"not predicted to engage in the modelled mode"). One paragraph.
+
+## What would answer the question
+Wet-lab assays or alternative tools that could adjudicate (literature-
+grounded where possible — surface-plasmon resonance, ITC, cellular
+binding assay, FEP, cryo-EM, etc.). 2-4 bullets.
+
+## Raw metrics
+For transparency: pLDDT, pTM, ipTM, binder probability (if any),
+Chai-1 agreement (if any). Plain table or bullet list.
 
 If FAILED (technical failure — predictors didn't produce usable output):
 ## Mechanism of action (background)
@@ -227,10 +257,18 @@ def _build_user_message(fold: Fold, related: list[Fold]) -> str:
         else None
     )
 
+    discard_block = ""
+    if fold.discard_reason:
+        # Surfaced when the orchestrator's predictability gate refused the
+        # fold before Structural ran. The Communicator MUST lead its TLDR
+        # with this reason and skip the "biological invalidation" framing.
+        discard_block = f"DISCARD REASON (from orchestrator gate): {fold.discard_reason}\n\n"
+
     return (
         f"FOLD №{fold.id}\n"
         f"Title: {fold.title}\n"
-        f"Verdict (from Structural agent): {fold.fold_verdict or 'unknown'}\n\n"
+        f"Verdict (from Structural agent): {fold.fold_verdict or 'unknown'}\n"
+        f"{discard_block}"
         "RESEARCHER OUTPUT:\n"
         f"  Peptide: {fold.peptide_name} ({fold.peptide_sequence})\n"
         f"  Class: {fold.peptide_class}\n"
@@ -372,14 +410,51 @@ async def run_communicator(db: AsyncSession, fold: Fold) -> dict[str, Any]:
     parsed: dict[str, Any] = {}
     try:
         related = await _related_folds(db, fold)
-        completion = await call_claude(
-            model=settings.COMMUNICATOR_MODEL,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": _build_user_message(fold, related)}],
-            max_tokens=6000,
-            temperature=0.45,
-        )
-        raw = extract_json(completion["text"])
+        # DISCARDED + FAILED reports are structurally shorter (6 sections
+        # vs 14 for REFINED), so we trim their token budget — but not so
+        # tightly that Communicator runs out of room for the JSON envelope
+        # + executive_summary + tweet_draft. The DISCARDED 6-section
+        # research_brief alone is ~700-1000 tokens; 4500 leaves comfortable
+        # headroom for the rest of the schema.
+        is_terse = (fold.fold_verdict or "").upper() in {"DISCARDED", "FAILED"}
+        max_tokens = 4500 if is_terse else 6000
+
+        user_msg = _build_user_message(fold, related)
+        last_err: Exception | None = None
+        completion: dict[str, Any] | None = None
+        raw: dict[str, Any] | list[Any] | None = None
+        # Single retry on JSON parse failures — same shape as the
+        # Researcher's recovery loop. Lower temperature on retry + an
+        # explicit "JSON only" reminder almost always recovers without
+        # doubling cost.
+        for attempt in (1, 2):
+            try:
+                completion = await call_claude(
+                    model=settings.COMMUNICATOR_MODEL,
+                    system=SYSTEM_PROMPT,
+                    messages=[{"role": "user", "content": user_msg}],
+                    max_tokens=max_tokens,
+                    temperature=0.45 if attempt == 1 else 0.2,
+                )
+                raw = extract_json(completion["text"])
+                break
+            except ValueError as parse_err:
+                last_err = parse_err
+                log.warning(
+                    "alembic.communicator.json_parse_retry",
+                    fold_id=fold.id,
+                    attempt=attempt,
+                    error=str(parse_err),
+                )
+                user_msg = (
+                    user_msg
+                    + "\n\nReturn ONLY a single valid JSON object matching "
+                    "the schema in the system prompt — no preamble, no "
+                    "markdown fences, no trailing commentary. Every field "
+                    "from the schema must be present."
+                )
+        if raw is None or completion is None:
+            raise last_err or ValueError("communicator: no JSON after retries")
         if not isinstance(raw, dict):
             raise ValueError("expected JSON object from Communicator")
         parsed = raw

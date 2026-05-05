@@ -28,6 +28,10 @@ from ..config import settings
 from ..db.models import Fold, KnownPeptide
 from ..logging_setup import get_logger
 from ..tools import peptide_db
+from ..tools.structural_limits import (
+    RESEARCHER_TOOL_LIMITS_BLOCK,
+    assess_predictability,
+)
 from .base import (
     call_claude,
     extract_json,
@@ -149,6 +153,15 @@ RULES:
 - Stay honest — in silico hypothesis generation, not drug discovery.
 - Choose modifications relevant to performance biohacking (longevity, regeneration,
   cognition, metabolism, performance). We do NOT research disease pathogenic mutations.
+
+""" + RESEARCHER_TOOL_LIMITS_BLOCK + """
+
+PEPTIDE AVOID LIST (HARD CONSTRAINT):
+The user message includes a "PEPTIDES TO AVOID THIS CYCLE" block listing
+peptides where the lab has accumulated 3+ consecutive DISCARDED folds with
+no REFINED. These are almost certainly tool-limit failures (sub-resolution
+length, lipid target, AlphaFold-blind chemistry). Pick a different peptide
+this cycle — do not propose ANY hypothesis for a peptide on the AVOID list.
 """
 
 
@@ -195,6 +208,63 @@ async def _lab_wide_history(
         }
         for r in rows
     ]
+
+
+async def _blocked_peptides(
+    db: AsyncSession, *, lookback: int = 15, threshold: int = 3
+) -> dict[str, dict[str, int]]:
+    """Identify peptides systematically failing the predictors.
+
+    Walks the last ``lookback`` publishable folds and returns
+    ``{peptide_name: {"DISCARDED": n, "REFINED": m, "PROMISING": k}}`` for
+    every peptide that has ``threshold+`` DISCARDED outcomes and zero
+    REFINED ones in that window. These are almost always tool-limit
+    failures (Epitalon AEDG hitting the resolution floor 5/5 times,
+    Sermorelin × GHRHR with non-canonical residues, etc.) and should be
+    filtered out of peptide selection rather than retried again.
+    """
+    rows = (
+        await db.execute(
+            select(Fold)
+            .where(Fold.status.in_(["REFINED", "PROMISING", "DISCARDED"]))
+            .where(Fold.peptide_name.is_not(None))
+            .order_by(Fold.id.desc())
+            .limit(lookback)
+        )
+    ).scalars().all()
+
+    tally: dict[str, dict[str, int]] = {}
+    for r in rows:
+        name = r.peptide_name or ""
+        if not name:
+            continue
+        bucket = tally.setdefault(
+            name, {"REFINED": 0, "PROMISING": 0, "DISCARDED": 0}
+        )
+        verdict = (r.fold_verdict or r.status or "").upper()
+        if verdict in bucket:
+            bucket[verdict] += 1
+
+    return {
+        name: counts
+        for name, counts in tally.items()
+        if counts["DISCARDED"] >= threshold and counts["REFINED"] == 0
+    }
+
+
+def _format_blocked_peptides(blocked: dict[str, dict[str, int]]) -> str:
+    """Render the AVOID block exposed to the Researcher."""
+    if not blocked:
+        return "(none — every peptide in recent history has at least one non-discarded outcome)"
+    lines = []
+    for name, counts in blocked.items():
+        lines.append(
+            f"  {name} — {counts['DISCARDED']} consecutive DISCARDED, "
+            f"no REFINED. Likely a tool-limit failure (sub-resolution "
+            f"peptide length, lipid/uncharacterized target, or AlphaFold-"
+            f"blind chemistry). Pick a different peptide this cycle."
+        )
+    return "\n".join(lines)
 
 
 def _format_lab_wide_history(rows: list[dict[str, Any]]) -> str:
@@ -323,6 +393,7 @@ def _build_user_message(
     history_block: str,
     canonical_block: str,
     lab_wide_block: str,
+    avoid_block: str,
 ) -> str:
     """Render KnownPeptide + history + canonical targets into a prompt."""
     try:
@@ -341,6 +412,8 @@ def _build_user_message(
         f"Biohacker use: {peptide.biohacker_use}\n\n"
         "CANONICAL TARGETS — pick exactly one and copy its IDs verbatim:\n"
         f"{canonical_block}\n\n"
+        "PEPTIDES TO AVOID THIS CYCLE (3+ consecutive DISCARDED, no REFINED):\n"
+        f"{avoid_block}\n\n"
         "LAB-WIDE RECENT HISTORY (last folds across ALL peptides — for the "
         "rotation rule):\n"
         f"{lab_wide_block}\n\n"
@@ -372,7 +445,12 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
     parsed: dict[str, Any] = {}
     try:
         recent_ids = await _recent_fold_peptide_ids(db)
-        peptide = await peptide_db.get_random_peptide(db, exclude_recent_ids=recent_ids)
+        blocked = await _blocked_peptides(db)
+        peptide = await peptide_db.get_random_peptide(
+            db,
+            exclude_recent_ids=recent_ids,
+            blocked_names=list(blocked.keys()),
+        )
         if peptide is None:
             raise RuntimeError("no KnownPeptide rows in DB — seed not run?")
 
@@ -385,18 +463,29 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
         canonical_block, canonical_list = _format_canonical_targets(peptide)
         lab_wide_rows = await _lab_wide_history(db, limit=10)
         lab_wide_block = _format_lab_wide_history(lab_wide_rows)
+        avoid_block = _format_blocked_peptides(blocked)
 
         user_msg = _build_user_message(
-            peptide, history_block, canonical_block, lab_wide_block
+            peptide,
+            history_block,
+            canonical_block,
+            lab_wide_block,
+            avoid_block,
         )
 
-        # Retry once on JSON-parse failures: Claude occasionally drops a comma
-        # or unbalanced brace at temp ≥ 0.5. A single retry at temp 0.2 with
-        # an explicit reminder almost always recovers without inflating cost.
+        # Up to 3 attempts:
+        #   - JSON parse failure → retry at lower temp with explicit reminder
+        #   - assess_predictability blocks → retry with a tool-limit reminder
+        # Both share the same loop so the temperature and ``user_msg``
+        # mutations compose correctly. Capped at 3 to bound worst-case cost
+        # to ~$0.30 (Opus); after that we accept the proposal even if it
+        # tripped the gate so the cycle's downstream gate can still mark
+        # the fold DISCARDED with a clean discard_reason.
         last_err: Exception | None = None
         completion: dict[str, Any] | None = None
         raw: dict[str, Any] | list[Any] | None = None
-        for attempt in (1, 2):
+        gate_warnings: tuple[str, ...] = ()
+        for attempt in (1, 2, 3):
             try:
                 completion = await call_claude(
                     model=settings.RESEARCHER_MODEL,
@@ -406,7 +495,6 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
                     temperature=0.5 if attempt == 1 else 0.2,
                 )
                 raw = extract_json(completion["text"])
-                break
             except ValueError as parse_err:
                 last_err = parse_err
                 log.warning(
@@ -420,10 +508,47 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
                     + "\n\nReturn ONLY a single valid JSON object with no "
                     "trailing commentary or markdown fences."
                 )
-        if raw is None or completion is None:
+                continue
+
+            if not isinstance(raw, dict):
+                last_err = ValueError("expected JSON object from Researcher")
+                continue
+
+            # Pre-flight predictability check on the freshly proposed fold.
+            # Hard blocks → regenerate. Soft warnings → keep them and let
+            # them flow into the AgentRun.tags + Communicator caveats.
+            verdict = assess_predictability(
+                peptide_sequence=raw.get("modified_sequence")
+                or raw.get("peptide_sequence")
+                or peptide.sequence,
+                target_protein=raw.get("target_protein"),
+                modification=raw.get("modification_description"),
+                target_uniprot=raw.get("target_uniprot_id"),
+            )
+            gate_warnings = verdict.warnings
+            if verdict.block and attempt < 3:
+                log.warning(
+                    "alembic.researcher.predictability_retry",
+                    fold_id=fold_id_cached,
+                    attempt=attempt,
+                    reason=verdict.block_reason,
+                )
+                user_msg = (
+                    user_msg
+                    + "\n\n⚠️  PREVIOUS PROPOSAL REJECTED — tool-limit gate:\n"
+                    f"  {verdict.block_reason}\n"
+                    "Pick a different peptide / target / modification that "
+                    "the structure prediction pipeline can adjudicate."
+                )
+                continue
+
+            # Either passed, or 3rd attempt — accept and let downstream gate
+            # produce a clean DISCARDED with discard_reason if it still
+            # tripped the limits.
+            break
+
+        if raw is None or completion is None or not isinstance(raw, dict):
             raise last_err or ValueError("researcher: no JSON after retries")
-        if not isinstance(raw, dict):
-            raise ValueError("expected JSON object from Researcher")
         parsed = raw
 
         # If the agent chose a target and the canonical list is non-empty, we
@@ -511,12 +636,18 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
             tags.append(f"focus:{focus_raw}")
         if category_raw:
             tags.append(f"category:{category_raw}")
+        if gate_warnings:
+            tags.append(f"gate_warnings:{len(gate_warnings)}")
+        if blocked:
+            tags.append(f"avoid_peptides:{len(blocked)}")
         log.info(
             "alembic.researcher.rotation",
             fold_id=fold_id_cached,
             focus=focus_raw,
             category=category_raw,
             recent_count=len(lab_wide_rows),
+            blocked_peptides=list(blocked.keys()),
+            gate_warnings=list(gate_warnings),
         )
         await log_agent_run(
             db,

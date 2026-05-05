@@ -134,6 +134,14 @@ _AD_HOC_MIGRATIONS: tuple[tuple[str, str], ...] = (
         "lab_stats",
         "ALTER TABLE lab_stats ADD COLUMN IF NOT EXISTS total_onchain_logged INTEGER NOT NULL DEFAULT 0",
     ),
+    # Predictability gate (FIX 2). When the orchestrator refuses a fold
+    # before Structural runs (lipid target, missing UniProt, sub-resolution
+    # peptide length, etc.), the reason is stored here so the Communicator
+    # + frontend can render it without re-running the gate.
+    (
+        "folds",
+        "ALTER TABLE folds ADD COLUMN IF NOT EXISTS discard_reason TEXT",
+    ),
 )
 
 

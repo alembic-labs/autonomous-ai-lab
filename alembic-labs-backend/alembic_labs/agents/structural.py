@@ -64,7 +64,15 @@ Output valid JSON:
   "structural_caveats": ["<caveat 1>", "<caveat 2>"]
 }
 
-VERDICT CRITERIA — apply in order, top-down:
+VERDICT CRITERIA — METRIC-DRIVEN ONLY. APPLY IN ORDER, TOP-DOWN.
+
+The fold_verdict is determined exclusively by the QUANTITATIVE metrics
+that the predictor produced. Modification chemistry the predictor cannot
+represent (D-amino acids, non-canonical residues, lipid moieties, PEG
+linkers, hydrocarbon staples) goes into ``structural_caveats`` — it
+NEVER drops the verdict by itself. The structure that WAS modelled is
+what you score; if the protein-protein interface is well-resolved, the
+verdict reflects that resolution and the unmodelled moiety is caveated.
 
 FAILED (technical failure — different from biological discarding):
 - Both predictors returned errors / no PDB produced
@@ -73,26 +81,48 @@ FAILED (technical failure — different from biological discarding):
 REFINED (high confidence, ready to share):
 - pLDDT ≥ 0.70 AND
 - pTM ≥ 0.50 AND
-- ipTM ≥ 0.40 (if interface scored) AND
-- Boltz-Chai pLDDT agreement ≥ 0.70 (if both available)
-- Boltz-2 binder probability ≥ 0.60 (if available)
+- ipTM ≥ 0.40 (when interface scored) AND
+- Boltz-Chai pLDDT agreement ≥ 0.70 (when Chai-1 ran) AND
+- Boltz-2 binder probability ≥ 0.60 (when affinity head returned a value)
 
 PROMISING (moderate signal, worth flagging but not headline):
-- pLDDT 0.55–0.70 OR ipTM 0.30–0.40, AND
-- No serious structural disagreement with literature
-- Note this in caveats but still publish
+- Either the pLDDT (0.55–0.70) OR the ipTM (0.30–0.40) is borderline, AND
+- Boltz-2 binder probability ≥ 0.30 (when present), AND
+- pLDDT-Chai agreement ≥ 0.40 (when present)
 
-DISCARDED (biologically uninformative, but the tools worked):
-- pLDDT < 0.55 with no rescuing metric (low ipTM, low binder probability)
-- OR sequence too long for reliable peptide-target prediction (>500 aa total)
-- OR known failure mode (high disorder, etc.)
+DISCARDED — only when one of the FOLLOWING METRIC SIGNALS fires. Nothing
+else qualifies as a downgrade reason.
+- pLDDT < 0.55 with no rescuing ipTM, OR
+- ipTM < 0.30 (when interface scored) — predicted interface unreliable, OR
+- Boltz-2 binder probability < 0.30 (when present) — predicted non-binder, OR
+- Boltz-Chai pLDDT agreement < 0.40 (when present) — ensemble disagreement,
+  the structural prediction itself is unreliable, OR
+- sequence too long for reliable peptide-target prediction (> 500 aa total)
+
+WHAT IS A VERDICT SIGNAL (these set the tier):
+- pLDDT, pTM, ipTM, complex pLDDT (Boltz-2)
+- chai_agreement (when Chai-1 ran)
+- binding_probability (when Boltz-2 affinity returned a value)
+
+WHAT IS NOT A VERDICT SIGNAL (caveats only — never downgrade on these):
+- Modification chemistry the predictor doesn't represent (D-AAs, non-
+  canonical residues, lipid moieties, PEG, hydrocarbon staples, fatty
+  acid caps). The unmodelled moiety becomes a caveat; the modelled
+  protein-peptide interface still scores normally.
+- Heuristic profile values (aggregation, BBB, half-life — sequence
+  proxies, not predictions).
+- Literature suggesting a different binding mode — surface as
+  ``agreement_with_literature``, not as a verdict tier.
+- Skipped Chai-1 cross-validation when SKIPPED_HIGH_CONFIDENCE — the
+  gating logic decided cross-val wasn't needed; that's not a downgrade
+  signal, it's a confidence vote.
 
 LITERATURE GROUNDING:
 - If the literature consensus suggests a specific binding mode and the
-  prediction contradicts it, set agreement_with_literature to CONTRADICTS
-  and flag the disagreement in structural_caveats.
+  prediction contradicts it, set ``agreement_with_literature`` to
+  CONTRADICTS and flag the disagreement in ``structural_caveats``.
 - If literature supports the prediction, mention it briefly in
-  confidence_assessment.
+  ``confidence_assessment``.
 
 RULES:
 - Honest about limitations (in silico, single run, no wet lab).
@@ -100,6 +130,8 @@ RULES:
 - Flag low-confidence clearly.
 - Reference the Boltz-2 affinity numbers explicitly when available.
 - If Chai-1 disagrees significantly with Boltz-2, flag this.
+- The verdict comes from the metrics. Caveats explain what the verdict
+  does and does not mean. Do NOT confuse the two.
 """
 
 
@@ -283,6 +315,135 @@ def _coerce_verdict(raw: str | None, *, technical_failure: bool) -> str:
     return "DISCARDED"
 
 
+# Chai-1 agreement bands used to nudge the verdict after the LLM picks one.
+# Treats agreement as ensemble disagreement signal: if Boltz-2 and Chai-1
+# both confidently predict the same fold, the verdict is more trustworthy;
+# if they disagree, the structural prediction itself is unreliable and
+# the verdict gets downgraded by one tier (REFINED → PROMISING → DISCARDED).
+_CHAI_AGREEMENT_STRONG = 0.70
+_CHAI_AGREEMENT_WEAK = 0.40
+
+_VERDICT_DOWNGRADE: dict[str, str] = {
+    "REFINED": "PROMISING",
+    "PROMISING": "DISCARDED",
+    "DISCARDED": "DISCARDED",
+    "FAILED": "FAILED",
+}
+
+
+# Verdict ordering for floor/ceiling enforcement. FAILED stays separate —
+# it's a *technical* failure (no PDB), not a tier on the biological scale.
+_VERDICT_RANK: dict[str, int] = {
+    "DISCARDED": 0,
+    "PROMISING": 1,
+    "REFINED": 2,
+}
+
+
+def _compute_metric_floor(
+    *,
+    plddt: float | None,
+    ptm: float | None,
+    iptm: float | None,
+    binding_probability: float | None,
+    chai_agreement: float | None,
+) -> str:
+    """Lowest verdict tier that the raw metrics permit.
+
+    The LLM is allowed to *downgrade* freely within the bounds of
+    ``_VERDICT_DOWNGRADE`` (Chai/affinity post-process), but the floor
+    catches the over-cautious case where strong numeric metrics get
+    discarded purely on chemistry-class grounds (D-AAs, lipid moieties,
+    non-canonical residues — these belong in caveats, not in the
+    verdict).
+
+    Floor logic — applied AFTER the metric downgrade signals:
+
+    1.  If any HARD downgrade signal fires (low pLDDT, low binder
+        probability, ensemble disagreement, low ipTM): floor = DISCARDED
+        (no protection — the LLM may legitimately discard).
+    2.  Otherwise, if metrics are all in the REFINED band: floor =
+        PROMISING. The LLM may pick REFINED or PROMISING based on its
+        judgement, but cannot drop to DISCARDED.
+    3.  Otherwise (mixed/borderline metrics): floor = DISCARDED — the
+        LLM picks PROMISING or DISCARDED freely.
+    """
+
+    if plddt is None or plddt < 0.55:
+        return "DISCARDED"
+    if binding_probability is not None and binding_probability < 0.30:
+        return "DISCARDED"
+    if chai_agreement is not None and chai_agreement < _CHAI_AGREEMENT_WEAK:
+        return "DISCARDED"
+    if iptm is not None and iptm < 0.30:
+        return "DISCARDED"
+
+    iptm_ok = iptm is None or iptm >= 0.40
+    ptm_ok = ptm is None or ptm >= 0.50
+    if plddt >= 0.70 and iptm_ok and ptm_ok:
+        return "PROMISING"
+
+    return "DISCARDED"
+
+
+def _enforce_verdict_floor(
+    llm_verdict: str,
+    floor: str,
+) -> tuple[str, str | None]:
+    """Lift the LLM's verdict to the metric floor when it dropped lower.
+
+    Returns ``(final_verdict, note)``. ``note`` is a one-liner appended
+    to ``structural_caveats`` when the floor changed the verdict, so the
+    Communicator surfaces the rationale ("metrics are in REFINED band;
+    LLM judgement on chemistry surfaced as caveat, not downgrade").
+    """
+    if llm_verdict == "FAILED":
+        return llm_verdict, None
+    llm_rank = _VERDICT_RANK.get(llm_verdict, 0)
+    floor_rank = _VERDICT_RANK.get(floor, 0)
+    if llm_rank >= floor_rank:
+        return llm_verdict, None
+    return floor, (
+        f"Metric floor enforced: raw structural metrics permit at least "
+        f"{floor}, lifting from {llm_verdict}. Modification chemistry the "
+        "predictor cannot represent (D-AAs, lipid moieties, non-canonical "
+        "residues) belongs in the caveats above, not in the verdict."
+    )
+
+
+def _apply_chai_agreement(
+    verdict: str,
+    agreement: float | None,
+) -> tuple[str, str | None]:
+    """Optionally downgrade the verdict based on Chai-1 cross-validation.
+
+    Returns ``(new_verdict, evidence_note)``. ``evidence_note`` is a
+    one-liner the agent can append to its caveats so the user sees the
+    rationale behind the downgrade in the report. None of this fires when
+    Chai-1 was skipped (agreement is None).
+    """
+    if agreement is None:
+        return verdict, None
+    if agreement >= _CHAI_AGREEMENT_STRONG:
+        return verdict, (
+            f"Chai-1 cross-validated (agreement {agreement:.2f}) — "
+            "structural prediction confirmed."
+        )
+    if agreement < _CHAI_AGREEMENT_WEAK:
+        downgraded = _VERDICT_DOWNGRADE.get(verdict, verdict)
+        if downgraded != verdict:
+            return downgraded, (
+                f"Chai-1 disagreement (agreement {agreement:.2f}) — "
+                "Boltz-2 / Chai-1 ensemble does not converge; verdict "
+                f"downgraded {verdict} → {downgraded}."
+            )
+        return downgraded, (
+            f"Chai-1 disagreement (agreement {agreement:.2f}) — already "
+            f"at {verdict}, no further downgrade."
+        )
+    return verdict, None
+
+
 async def run_structural(db: AsyncSession, fold: Fold) -> dict[str, Any]:
     """Run structure prediction + LLM verdict; populate fold structural fields."""
 
@@ -434,6 +595,72 @@ async def run_structural(db: AsyncSession, fold: Fold) -> dict[str, Any]:
         parsed["fold_verdict"] = _coerce_verdict(
             parsed.get("fold_verdict"), technical_failure=technical_failure
         )
+
+        # Post-LLM verdict adjustments grounded in raw structural signals.
+        # The LLM gets the affinity + agreement numbers and is *asked* to
+        # apply them, but it sometimes overlooks them; these guards make
+        # the downgrades deterministic.
+        adjustment_notes: list[str] = []
+        verdict_after = parsed["fold_verdict"]
+
+        # FIX 5: Chai-1 agreement feeds verdict (>0.7 confirm, <0.4 downgrade).
+        verdict_after, chai_note = _apply_chai_agreement(verdict_after, agreement)
+        if chai_note:
+            adjustment_notes.append(chai_note)
+
+        # FIX 1: hard floor on binder probability — if Boltz-2's affinity
+        # head says <0.30 binder probability, even a high-pLDDT structure
+        # is meaningless (we predicted a non-binder); never let such a
+        # fold sit at REFINED or PROMISING.
+        bp = boltz.get("binding_probability")
+        if (
+            bp is not None
+            and bp < 0.30
+            and verdict_after in {"REFINED", "PROMISING"}
+        ):
+            adjustment_notes.append(
+                f"Boltz-2 binder probability {bp:.2f} < 0.30 — predicted "
+                f"non-binder; verdict downgraded {verdict_after} → DISCARDED."
+            )
+            verdict_after = "DISCARDED"
+
+        # METRIC FLOOR — protects against over-cautious LLM discards on
+        # folds with strong raw metrics. Runs AFTER the metric-based
+        # downgrades so a low-binder/low-chai fold can still legitimately
+        # reach DISCARDED, but a strong-metric fold cannot be dropped on
+        # chemistry-class grounds alone (the audit of folds #65/#75/#77
+        # showed the LLM was treating "modification contains D-AA / lipid
+        # / non-canonical residue" as a hard discard signal even when the
+        # protein-protein interface was well-resolved).
+        floor = _compute_metric_floor(
+            plddt=_normalise_plddt(boltz.get("plddt")),
+            ptm=boltz.get("ptm"),
+            iptm=boltz.get("iptm"),
+            binding_probability=bp,
+            chai_agreement=agreement,
+        )
+        verdict_after, floor_note = _enforce_verdict_floor(verdict_after, floor)
+        if floor_note:
+            adjustment_notes.append(floor_note)
+
+        if verdict_after != parsed["fold_verdict"]:
+            log.info(
+                "alembic.structural.verdict_adjusted",
+                fold_id=fold.id,
+                from_verdict=parsed["fold_verdict"],
+                to_verdict=verdict_after,
+                agreement=agreement,
+                binding_probability=bp,
+                metric_floor=floor,
+            )
+        parsed["fold_verdict"] = verdict_after
+
+        # Append the adjustment notes to the caveats so the Communicator
+        # surfaces *why* the verdict shifted in the report.
+        existing_caveats = parsed.get("structural_caveats") or []
+        if not isinstance(existing_caveats, list):
+            existing_caveats = [str(existing_caveats)]
+        parsed["structural_caveats"] = list(existing_caveats) + adjustment_notes
 
         fold.confidence_plddt = _normalise_plddt(boltz.get("plddt"))
         fold.confidence_ptm = boltz.get("ptm")
