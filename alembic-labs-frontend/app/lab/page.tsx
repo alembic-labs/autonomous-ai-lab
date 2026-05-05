@@ -3,6 +3,9 @@ import { AgentsGrid } from "@/components/lab/AgentsGrid";
 import { StackTree } from "@/components/lab/StackTree";
 import { LiveMetrics } from "@/components/lab/LiveMetrics";
 
+const LAB_3D_URL =
+  process.env.NEXT_PUBLIC_LAB_3D_URL || "https://lab.alembic.bio";
+
 export default function LabPage() {
   return (
     <div>
@@ -19,69 +22,88 @@ export default function LabPage() {
           <span className="text-small uppercase tracking-wider text-text-secondary">
             3d floor
           </span>
-          <span className="inline-flex items-center gap-2 px-2 py-0.5 text-small uppercase tracking-wider border border-brand text-brand">
+          <a
+            href={LAB_3D_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 px-2 py-0.5 text-small uppercase tracking-wider border border-brand text-brand hover:bg-brand hover:text-bg transition-colors"
+          >
             <span
               aria-hidden="true"
               className="inline-block h-1.5 w-1.5 bg-brand animate-pulse-red"
             />
-            coming soon
-          </span>
+            open fullscreen ↗
+          </a>
         </div>
 
         <div className="relative bg-bg border-b border-border-subtle">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/lab-3d-preview.png"
-            alt="Preview render of the planned 3D laboratory floor — five lab-coated AI agents at workstations"
-            className="block w-full h-auto opacity-90 select-none"
-            draggable={false}
-          />
-          <span className="pointer-events-none absolute bottom-2 right-3 text-small uppercase tracking-wider text-text-muted">
-            preview render — not live
+          {/*
+            Live embed of the standalone 3D lab. Cross-origin iframe is
+            fine here — lab.alembic.bio sets no X-Frame-Options (nginx
+            default) so the embed loads, and the lab's /api/* calls go
+            same-origin via the Caddy proxy on lab.alembic.bio so we
+            don't need to relax CORS just for the iframe.
+          */}
+          <div className="relative w-full" style={{ aspectRatio: "16 / 9" }}>
+            <iframe
+              src={LAB_3D_URL}
+              title="Alembic 3D laboratory — live floor"
+              className="absolute inset-0 w-full h-full block bg-bg"
+              allow="fullscreen; accelerometer; gyroscope"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
+          </div>
+          <span className="pointer-events-none absolute bottom-2 right-3 text-small uppercase tracking-wider text-text-muted bg-bg/70 px-2 py-0.5">
+            live · click an agent
           </span>
         </div>
 
         <div className="p-5 space-y-3 text-body text-text-secondary leading-relaxed">
           <p>
-            Soon the lab gets a fully interactive 3D floor — a real-time
-            visualization of the research apparatus you see described below.
-            Each AI agent will be embodied as a workstation: click any of them
-            to watch their current task unfold, inspect the inputs they're
-            reading, and read the reasoning they're emitting{" "}
-            <span className="text-text-primary">as it happens</span>.
+            What you see above is the live 3D floor — a real-time visualization
+            of the research apparatus described below. Each AI agent is embodied
+            as a station: click any of them to read what they're doing{" "}
+            <span className="text-text-primary">right now</span>.
           </p>
           <ul className="space-y-1.5 pt-1">
             <li className="flex gap-3">
               <span className="text-text-muted">—</span>
               <span>
                 <span className="text-text-primary">Researcher's desk:</span>{" "}
-                see the peptide registry pull, the modification hypothesis
-                being drafted, the literature query being built.
+                pulls a peptide from the registry and drafts the modification
+                hypothesis the rest of the cycle is built around.
               </span>
             </li>
             <li className="flex gap-3">
               <span className="text-text-muted">—</span>
               <span>
                 <span className="text-text-primary">Structural bay:</span>{" "}
-                watch Boltz-2 / Chai-1 returning the predicted complex into
-                the 3D viewer in real time, with confidence metrics streaming
-                onto an adjacent screen.
+                runs Boltz-2 (and adaptively Chai-1) to score the predicted
+                complex, then assigns the verdict — REFINED, PROMISING or
+                DISCARDED — based on the structural metrics alone.
               </span>
             </li>
             <li className="flex gap-3">
               <span className="text-text-muted">—</span>
               <span>
                 <span className="text-text-primary">Communicator's terminal:</span>{" "}
-                follow the report being typed token-by-token, with each
-                citation lighting up as it lands.
+                writes the public report and commits the on-chain hash so the
+                full provenance is verifiable on Solana.
               </span>
             </li>
           </ul>
           <p className="text-text-muted text-small pt-2">
-            The image above is a pre-production mockup. Architecture, lighting
-            and agent placement are final intent — geometry and animations will
-            ship as the standalone scene at{" "}
-            <span className="font-mono">lab.alembic.bio</span>.
+            Standalone fullscreen view at{" "}
+            <a
+              href={LAB_3D_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="font-mono text-brand hover:underline"
+            >
+              lab.alembic.bio ↗
+            </a>
+            . The iframe above polls the same backend every 10 seconds.
           </p>
         </div>
       </section>
