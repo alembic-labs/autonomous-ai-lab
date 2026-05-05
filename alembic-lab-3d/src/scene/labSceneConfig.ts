@@ -1,5 +1,17 @@
 export const LAB_GLB = "/3d-lab/sci-fi_lab.glb";
 
+export type WanderTuning = {
+  /** Max radius (in world units, ≈meters) the agent strays from its anchor. */
+  radius: number;
+  /** Walking speed in units/sec. Comfortable indoor walk ≈ 0.5–0.7. */
+  speed: number;
+  /** Time constant for damped Y-rotation toward velocity heading (seconds). */
+  turnDamp: number;
+  /** Idle pause range between walks (seconds). */
+  idleMin: number;
+  idleMax: number;
+};
+
 export type ScientistSlot = {
   id: string;
   url: string;
@@ -8,6 +20,18 @@ export type ScientistSlot = {
   rotation?: [number, number, number];
   /** Extra uniform scale after height fit (some GLBs under-report bbox vs skinned bounds). */
   scaleMultiplier?: number;
+  /** Roam around the anchor when not in edit mode. Defaults to true. */
+  wandering?: boolean;
+  /** Per-slot tuning override. Defaults to WANDER_DEFAULTS. */
+  wander?: Partial<WanderTuning>;
+};
+
+export const WANDER_DEFAULTS: WanderTuning = {
+  radius: 1.0,
+  speed: 0.55,
+  turnDamp: 0.22,
+  idleMin: 4.5,
+  idleMax: 11.0,
 };
 
 /** Snapshots from downloaded lab-layout.json (manual placement in viewer). */
@@ -47,6 +71,8 @@ export const SCIENTISTS: ScientistSlot[] = [
     position: [0.28362921116237416, 1.6461800946291325, -0.35922740080251647],
     rotation: [-3.141592653589793, 1.4905378342005715, -3.141592653589793],
     scaleMultiplier: 0.082,
+    // Sealed inside the cylindrical specimen chamber — nowhere to walk.
+    wandering: false,
   },
 ];
 
