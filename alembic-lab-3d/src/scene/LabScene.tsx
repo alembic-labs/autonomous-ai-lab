@@ -147,26 +147,31 @@ function ScientistModel({ slot }: { slot: ScientistSlot }) {
 
   // Boot into IDLE (or rest pose if no idle clip exists).
   useEffect(() => {
-    idleAction?.reset().fadeIn(0.4).play();
+    idleAction?.reset().fadeIn(0.5).play();
     return () => {
-      idleAction?.fadeOut(0.25);
-      walkAction?.fadeOut(0.25);
+      idleAction?.fadeOut(0.4);
+      walkAction?.fadeOut(0.4);
     };
   }, [idleAction, walkAction]);
 
   const animState = useRef<WanderState>("IDLE");
   useWander(wanderRef, {
+    slotId: slot.id,
     enabled: wanderEnabled,
     tuning: slot.wander,
     onState: (next) => {
       if (next === animState.current) return;
       animState.current = next;
+      // 0.5s crossfade reads as a smooth "winding down" rather than a
+      // hard cut between locomotion and rest — paired with the early
+      // heading correction in useWander, the return-to-idle looks
+      // unforced.
       if (next === "WALKING") {
-        idleAction?.fadeOut(0.25);
-        walkAction?.reset().fadeIn(0.25).play();
+        idleAction?.fadeOut(0.5);
+        walkAction?.reset().fadeIn(0.5).play();
       } else {
-        walkAction?.fadeOut(0.25);
-        idleAction?.reset().fadeIn(0.25).play();
+        walkAction?.fadeOut(0.5);
+        idleAction?.reset().fadeIn(0.5).play();
       }
     },
   });

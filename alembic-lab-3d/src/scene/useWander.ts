@@ -1,4 +1,4 @@
-import { type RefObject, useRef } from "react";
+import { type RefObject, useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { WANDER_DEFAULTS, type WanderTuning } from "./labSceneConfig";
@@ -21,7 +21,48 @@ type Runtime = {
   facingY: number;
   /** Heading the agent is currently turning toward. */
   desiredY: number;
+  /** Wall-clock seconds when the WALKING phase started (for timeout safety). */
+  walkStartedAt: number;
 };
+
+// ---------------------------------------------------------------------------
+// Single-walker lock (module-level singleton).
+//
+// The lab reads better when only ONE scientist is in motion at a time —
+// otherwise it looks like a busy crowd, which clashes with the "people
+// working at stations" feel. Each useWander instance must acquire this
+// lock before transitioning IDLE → WALKING and release it on arrival home.
+// First idle-timer-expiry wins; the rest stay home (their idle timer has
+// already elapsed, so they'll grab the lock the moment it frees).
+// ---------------------------------------------------------------------------
+
+let walkLockHolder: string | null = null;
+/** Wall-clock seconds the lock was acquired — used for the watchdog timeout. */
+let walkLockAcquiredAt = 0;
+/** Hard cap on a single tour, in seconds, in case the agent gets stuck. */
+const WALK_LOCK_MAX_SECONDS = 45;
+
+function tryAcquireWalkLock(id: string, now: number): boolean {
+  if (walkLockHolder === null) {
+    walkLockHolder = id;
+    walkLockAcquiredAt = now;
+    return true;
+  }
+  if (walkLockHolder === id) return true;
+  // Watchdog: stale lock from a vanished/stuck holder.
+  if (now - walkLockAcquiredAt > WALK_LOCK_MAX_SECONDS) {
+    walkLockHolder = id;
+    walkLockAcquiredAt = now;
+    return true;
+  }
+  return false;
+}
+
+function releaseWalkLock(id: string): void {
+  if (walkLockHolder === id) {
+    walkLockHolder = null;
+  }
+}
 
 /** Wrap an angle delta into the (-π, π] range. */
 function shortestAngularDelta(from: number, to: number): number {
@@ -54,6 +95,8 @@ function shortestAngularDelta(from: number, to: number): number {
 export function useWander(
   groupRef: RefObject<THREE.Group | null>,
   options: {
+    /** Stable slot identifier — used as the walk-lock key. */
+    slotId: string;
     enabled: boolean;
     tuning?: Partial<WanderTuning>;
     onState?: (next: WanderState) => void;
@@ -62,6 +105,16 @@ export function useWander(
   const rt = useRef<Runtime | null>(null);
   const onStateRef = useRef(options.onState);
   onStateRef.current = options.onState;
+  const slotId = options.slotId;
+
+  // Always release the lock when the component unmounts or the slot id
+  // changes — otherwise an HMR edit mid-walk leaves the lock orphaned and
+  // every other scientist is frozen at home forever.
+  useEffect(() => {
+    return () => {
+      releaseWalkLock(slotId);
+    };
+  }, [slotId]);
 
   useFrame((_, dt) => {
     const group = groupRef.current;
@@ -70,6 +123,7 @@ export function useWander(
     if (!options.enabled) {
       group.position.set(0, 0, 0);
       group.rotation.set(0, 0, 0);
+      releaseWalkLock(slotId);
       rt.current = null;
       return;
     }
@@ -87,14 +141,21 @@ export function useWander(
         pos: new THREE.Vector3(),
         facingY: 0,
         desiredY: 0,
+        walkStartedAt: 0,
       };
     }
 
     const r = rt.current;
 
-    // IDLE → plan a tour: 1–2 intermediate waypoints + return-home leg.
-    if (r.state === "IDLE" && now >= r.idleUntil) {
-      const legCount = 1 + (Math.random() < 0.45 ? 1 : 0);
+    // IDLE → plan a tour, but only if the global walk-lock is free.
+    // If the lock is taken, this scientist stays home; the timer doesn't
+    // reset, so they'll grab the lock the instant it frees.
+    if (
+      r.state === "IDLE" &&
+      now >= r.idleUntil &&
+      tryAcquireWalkLock(slotId, now)
+    ) {
+      const legCount = 1 + (Math.random() < 0.5 ? 1 : 0);
       for (let i = 0; i < legCount; i++) {
         const angle = Math.random() * Math.PI * 2;
         // Bias targets away from the dead-centre so the leg actually
@@ -107,6 +168,7 @@ export function useWander(
       // Final waypoint is always the anchor — IDLE can only resume at home.
       r.targets.push(new THREE.Vector3(0, 0, 0));
       r.state = "WALKING";
+      r.walkStartedAt = now;
       onStateRef.current?.("WALKING");
     }
 
@@ -116,27 +178,53 @@ export function useWander(
       const dz = tgt.z - r.pos.z;
       const dist = Math.hypot(dx, dz);
 
+      const isLastLeg = r.targets.length === 1;
+      // Final-approach band: while heading home, start blending the
+      // heading toward the anchor's forward direction (local Y = 0) so
+      // the agent ARRIVES already turned correctly — no abrupt snap into
+      // idle pose at the doorstep.
+      const FINAL_APPROACH_BAND = 0.65;
+      const inFinalApproach = isLastLeg && dist < FINAL_APPROACH_BAND;
+
       if (dist < 0.04) {
         // Reached this waypoint — pop and either continue or settle home.
         r.targets.shift();
         if (r.targets.length === 0) {
-          // Snap exactly to the anchor so position is bit-clean for IDLE.
-          r.pos.set(0, 0, 0);
+          // Don't snap pos: we're already within 4cm of (0,0,0) and the
+          // walk-anim → idle-anim crossfade hides the residual.
           r.state = "IDLE";
           r.idleUntil =
             now + cfg.idleMin + Math.random() * (cfg.idleMax - cfg.idleMin);
-          // Drift heading back toward the anchor rotation (local Y = 0)
-          // so the scientist faces "forward" again while idling.
           r.desiredY = 0;
+          releaseWalkLock(slotId);
           onStateRef.current?.("IDLE");
         }
       } else {
         const step = Math.min(cfg.speed * dt, dist);
         r.pos.x += (dx / dist) * step;
         r.pos.z += (dz / dist) * step;
-        // Local-frame +Z is "forward" for these models; atan2(dx, dz)
-        // gives the Y rotation that aligns +Z with the velocity vector.
-        r.desiredY = Math.atan2(dx, dz);
+        if (inFinalApproach) {
+          // Pre-rotate toward home heading during the last 65cm of the
+          // final leg. By the time pos reaches the anchor, the body is
+          // already aimed forward and the IDLE transition is invisible.
+          r.desiredY = 0;
+        } else {
+          // Local-frame +Z is "forward" for these models; atan2(dx, dz)
+          // gives the Y rotation that aligns +Z with the velocity vector.
+          r.desiredY = Math.atan2(dx, dz);
+        }
+      }
+
+      // Watchdog: if a tour somehow runs longer than the cap, force-end it
+      // so the lock doesn't get stuck.
+      if (now - r.walkStartedAt > WALK_LOCK_MAX_SECONDS) {
+        r.targets.length = 0;
+        r.state = "IDLE";
+        r.idleUntil =
+          now + cfg.idleMin + Math.random() * (cfg.idleMax - cfg.idleMin);
+        r.desiredY = 0;
+        releaseWalkLock(slotId);
+        onStateRef.current?.("IDLE");
       }
     }
 
