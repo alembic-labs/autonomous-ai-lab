@@ -99,7 +99,11 @@ function ScientistModel({ slot }: { slot: ScientistSlot }) {
   const scene = useMemo(() => {
     // Plain scene.clone() breaks SkinnedMesh rigs: clones share/wrong skeleton → same spot + bad bounds.
     const root = SkeletonUtils.clone(walkGltf.scene);
-    enableMeshShadows(root, true, true);
+    // Skinned shadows are the single most expensive thing the GPU is
+    // doing per frame here (rebuilt every animation tick × 5 agents).
+    // Drop castShadow on scientists; they still receive the shadow from
+    // the lab so they look grounded. Lab GLB keeps both.
+    enableMeshShadows(root, false, true);
     fitScientistUniformHeight(root, SCIENTIST_TARGET_HEIGHT);
     if (slot.scaleMultiplier && slot.scaleMultiplier !== 1) {
       root.scale.multiplyScalar(slot.scaleMultiplier);

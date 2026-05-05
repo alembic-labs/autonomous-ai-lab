@@ -2,9 +2,27 @@ import { LabCanvas } from "./LabCanvas";
 import { LayoutEditProvider, useLayoutEdit } from "./layoutEdit";
 import { AgentLiveProvider } from "./agents/agentLive";
 import { AgentInfoPanel } from "./agents/AgentInfoPanel";
+import { LabPulseProvider } from "./agents/labPulse";
+import { LabHUD } from "./agents/LabHUD";
 
 const mainSite =
   import.meta.env.VITE_MAIN_SITE_URL || "https://alembic.bio";
+
+/**
+ * Layout-edit toolbar is an internal placement tool, not a public
+ * feature. Gate the UI behind ``?edit=1`` so end users never see the
+ * Cyrillic placement chrome but the dev workflow (drop scientists,
+ * download lab-layout.json) keeps working.
+ */
+function isEditUiEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    return sp.get("edit") === "1";
+  } catch {
+    return false;
+  }
+}
 
 function EditToolbar() {
   const {
@@ -66,7 +84,7 @@ function EditToolbar() {
   );
 }
 
-function AppInner() {
+function AppInner({ editUi }: { editUi: boolean }) {
   return (
     <>
       <header className="app-header">
@@ -77,10 +95,11 @@ function AppInner() {
             <span className="app-muted">click an agent · drag · scroll</span>
           </nav>
         </div>
-        <EditToolbar />
+        {editUi ? <EditToolbar /> : null}
       </header>
       <div className="app-canvas-wrap">
         <LabCanvas />
+        <LabHUD />
         <AgentInfoPanel />
       </div>
     </>
@@ -88,10 +107,13 @@ function AppInner() {
 }
 
 export function App() {
+  const editUi = isEditUiEnabled();
   return (
     <LayoutEditProvider>
       <AgentLiveProvider>
-        <AppInner />
+        <LabPulseProvider>
+          <AppInner editUi={editUi} />
+        </LabPulseProvider>
       </AgentLiveProvider>
     </LayoutEditProvider>
   );

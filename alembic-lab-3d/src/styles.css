@@ -302,3 +302,185 @@ a:hover {
   color: #ff7766;
   font-size: 11px;
 }
+
+/* ── Lab HUD (top-left ambient widget) ──────────────────────────────── */
+
+.lab-hud {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: 280px;
+  max-width: calc(100vw - 32px);
+  padding: 12px 14px 12px;
+  background: rgba(10, 10, 10, 0.88);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--brand);
+  color: var(--text-primary);
+  font-size: 11px;
+  line-height: 1.45;
+  z-index: 10;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.lab-hud-skeleton .lab-hud-row {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.lab-hud-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.lab-hud-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.lab-hud-pulse-on {
+  background: #44dd88;
+  box-shadow: 0 0 8px rgba(68, 221, 136, 0.6);
+  animation: labHudPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes labHudPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.35); opacity: 0.7; }
+}
+
+.lab-hud-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.lab-hud-fold {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto auto;
+  gap: 2px 8px;
+  padding: 8px 10px;
+  text-decoration: none;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.lab-hud-fold:hover {
+  border-color: var(--brand);
+  background: rgba(255, 51, 68, 0.08);
+  text-decoration: none;
+}
+
+.lab-hud-fold-id {
+  grid-column: 1;
+  grid-row: 1;
+  color: var(--brand);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lab-hud-fold-arrow {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.lab-hud-fold-line {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  color: var(--text-primary);
+  font-size: 11px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.lab-hud-fold-verdict {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.lab-hud-fold-verdict-refined { color: #44dd88; }
+.lab-hud-fold-verdict-promising { color: #ffaa44; }
+.lab-hud-fold-verdict-discarded { color: var(--text-muted); }
+.lab-hud-fold-verdict-failed { color: #ff7766; }
+
+.lab-hud-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.lab-hud-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.lab-hud-num {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-hud-key {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.lab-hud-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.lab-hud-footer-link {
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.lab-hud-footer-link:hover {
+  text-decoration: underline;
+}
+
+.lab-hud-muted {
+  color: var(--text-muted);
+}
+
+.lab-hud-error {
+  color: #ff7766;
+}
+
+.lab-hud-row {
+  color: var(--text-secondary);
+}
