@@ -35,11 +35,13 @@ export type ScientistSlot = {
 };
 
 export const WANDER_DEFAULTS: WanderTuning = {
-  radius: 1.0,
+  radius: 1.2,
   speed: 0.55,
   turnDamp: 0.22,
-  idleMin: 4.5,
-  idleMax: 11.0,
+  // Long home-pause: scientists should LOOK like they're working at their
+  // station most of the time and only occasionally take a stroll.
+  idleMin: 12.0,
+  idleMax: 28.0,
 };
 
 /** Snapshots from downloaded lab-layout.json (manual placement in viewer). */
