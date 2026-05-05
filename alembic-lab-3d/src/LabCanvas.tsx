@@ -17,7 +17,6 @@ export function LabCanvas() {
     void useGLTF.preload(LAB_GLB);
     for (const s of SCIENTISTS) {
       void useGLTF.preload(s.url);
-      if (s.walkUrl) void useGLTF.preload(s.walkUrl);
       if (s.idleUrl) void useGLTF.preload(s.idleUrl);
     }
   }, []);

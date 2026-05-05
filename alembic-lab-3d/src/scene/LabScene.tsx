@@ -54,7 +54,7 @@ function pickAction(
 function pickActionByTagOrName(
   actions: Record<string, THREE.AnimationAction | null>,
   names: readonly string[],
-  tagged: Array<{ clip: THREE.AnimationClip; tag: "base" | "walk" | "idle" }>,
+  tagged: Array<{ clip: THREE.AnimationClip; tag: "walk" | "idle" }>,
   desiredTag: "walk" | "idle",
   nameKeys: readonly string[]
 ): THREE.AnimationAction | undefined {
@@ -85,17 +85,18 @@ function LabRoom() {
 }
 
 function ScientistModel({ slot }: { slot: ScientistSlot }) {
-  const baseGltf = useGLTF(slot.url);
-  // useGLTF can't be conditional, so we always call it. When walkUrl/idleUrl
-  // is undefined we point at the base — the cache de-dupes the request and
-  // the clip merge below filters duplicates by identity.
-  const walkGltf = useGLTF(slot.walkUrl ?? slot.url);
+  // ``slot.url`` is the rigged-mesh-+-walk GLB. ``slot.idleUrl`` is the
+  // optional secondary GLB whose single clip becomes the idle animation.
+  // Meshy exports both files with the same Mixamo armature (matching bone
+  // names), so the idle clip binds to our cloned skeleton via three.js's
+  // name-based PropertyBinding without needing SkeletonUtils.retargetClip.
+  const walkGltf = useGLTF(slot.url);
   const idleGltf = useGLTF(slot.idleUrl ?? slot.url);
   const { editMode } = useLayoutEdit();
 
   const scene = useMemo(() => {
     // Plain scene.clone() breaks SkinnedMesh rigs: clones share/wrong skeleton → same spot + bad bounds.
-    const root = SkeletonUtils.clone(baseGltf.scene);
+    const root = SkeletonUtils.clone(walkGltf.scene);
     enableMeshShadows(root, true, true);
     fitScientistUniformHeight(root, SCIENTIST_TARGET_HEIGHT);
     if (slot.scaleMultiplier && slot.scaleMultiplier !== 1) {
@@ -103,42 +104,32 @@ function ScientistModel({ slot }: { slot: ScientistSlot }) {
       snapCharacterFeetToGround(root);
     }
     return root;
-  }, [slot.url, slot.scaleMultiplier, baseGltf.scene]);
+  }, [slot.url, slot.scaleMultiplier, walkGltf.scene]);
 
-  // Meshy exports each animation as its own GLB containing the full mesh +
-  // skeleton + ONE clip. We treat ``slot.url`` as the visual base and pull
-  // every clip we can find from base/walk/idle GLBs, retargeting onto the
-  // base skeleton by bone name (Meshy keeps bone names stable across exports
-  // of the same character, so this is a no-op match for matching rigs).
-  const allClips = useMemo(() => {
-    const seen = new Set<THREE.AnimationClip>();
-    const clips: THREE.AnimationClip[] = [];
-    for (const gltf of [baseGltf, walkGltf, idleGltf]) {
-      const arr = gltf.animations as THREE.AnimationClip[] | undefined;
-      if (!arr) continue;
-      for (const c of arr) {
-        if (seen.has(c)) continue;
-        seen.add(c);
-        clips.push(c);
-      }
-    }
-    return clips;
-  }, [baseGltf, walkGltf, idleGltf]);
-
-  // Tag clips by source GLB so the picker prefers the file the user
-  // labelled as walk/idle even if Meshy exported the clip with a generic
-  // name like "Take 001" or "Animation".
+  // Tag clips by source so the picker prefers walkGltf for WALKING and
+  // idleGltf for IDLE even if the file's clip is named generically (Meshy
+  // tends to ship Mixamo-style names like "Armature|Casual_Walk|baselayer"
+  // that don't always contain "walk" / "idle" — the file source is the
+  // most reliable signal).
   const tagged = useMemo(() => {
-    const out: Array<{ clip: THREE.AnimationClip; tag: "base" | "walk" | "idle" }> = [];
-    for (const c of baseGltf.animations ?? []) out.push({ clip: c, tag: "base" });
-    if (slot.walkUrl) {
-      for (const c of walkGltf.animations ?? []) out.push({ clip: c, tag: "walk" });
-    }
-    if (slot.idleUrl) {
+    const out: Array<{ clip: THREE.AnimationClip; tag: "walk" | "idle" }> = [];
+    for (const c of walkGltf.animations ?? []) out.push({ clip: c, tag: "walk" });
+    if (slot.idleUrl && idleGltf !== walkGltf) {
       for (const c of idleGltf.animations ?? []) out.push({ clip: c, tag: "idle" });
     }
     return out;
-  }, [baseGltf, walkGltf, idleGltf, slot.walkUrl, slot.idleUrl]);
+  }, [walkGltf, idleGltf, slot.idleUrl]);
+
+  const allClips = useMemo(() => {
+    const seen = new Set<THREE.AnimationClip>();
+    const clips: THREE.AnimationClip[] = [];
+    for (const t of tagged) {
+      if (seen.has(t.clip)) continue;
+      seen.add(t.clip);
+      clips.push(t.clip);
+    }
+    return clips;
+  }, [tagged]);
 
   const { actions, names } = useAnimations(allClips, scene);
   const idleAction = useMemo(

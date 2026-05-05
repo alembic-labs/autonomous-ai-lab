@@ -14,12 +14,15 @@ export type WanderTuning = {
 
 export type ScientistSlot = {
   id: string;
-  /** Static base GLB — provides the mesh + rest skeleton the agent renders. */
+  /**
+   * Primary GLB — supplies the rigged mesh + skeleton + walk-cycle clip.
+   * Meshy's animation export packs the full character into every clip
+   * file, so this file's mesh is what the agent renders and its single
+   * animation is the agent's walk loop.
+   */
   url: string;
   zone: string;
-  /** Walk-cycle GLB. Animation clips are pulled from here and retargeted onto ``url``'s skeleton. */
-  walkUrl?: string;
-  /** Idle GLB. Optional — without it the IDLE state falls back to the base rest pose. */
+  /** Optional secondary GLB whose clip is grafted on as the IDLE animation. */
   idleUrl?: string;
   position: [number, number, number];
   rotation?: [number, number, number];
@@ -44,17 +47,19 @@ export const SCIENTISTS: ScientistSlot[] = [
   {
     id: "1",
     zone: "1 · floor right of GATE 07",
-    url: "/3d-lab/scientist-1.glb",
-    walkUrl: "/3d-lab/scientist-1-walk.glb",
-    idleUrl: "/3d-lab/scientist-1-idle.glb",
+    // NOTE: Meshy swapped scientist-1's clips between files — the file
+    // labelled "-walk" actually contains an idle clip ("Idle_13") and the
+    // "-idle" file contains the walking clip ("Texting_Walk"). The URLs
+    // below are crossed on purpose to put each clip in the right slot.
+    url: "/3d-lab/scientist-1-idle.glb",
+    idleUrl: "/3d-lab/scientist-1-walk.glb",
     position: [8.175426042597449, 0.02577319356117805, -4.3035778789495165],
     rotation: [-3.141592653589793, 1.4551804632888736, -3.141592653589793],
   },
   {
     id: "2",
     zone: "2 · green workstation wall",
-    url: "/3d-lab/scientist-2.glb",
-    walkUrl: "/3d-lab/scientist-2-walk.glb",
+    url: "/3d-lab/scientist-2-walk.glb",
     idleUrl: "/3d-lab/scientist-2-idle.glb",
     position: [7.678855221765017, 0.06042707976589268, -1.0638662251660016],
     rotation: [-3.141592653589793, 1.4400210547869952, -3.141592653589793],
@@ -62,8 +67,7 @@ export const SCIENTISTS: ScientistSlot[] = [
   {
     id: "3",
     zone: "3 · left blue tanks / pipes",
-    url: "/3d-lab/scientist-3.glb",
-    walkUrl: "/3d-lab/scientist-3-walk.glb",
+    url: "/3d-lab/scientist-3-walk.glb",
     idleUrl: "/3d-lab/scientist-3-idle.glb",
     position: [4.021386137837405, 0.056348486161091546, -1.5024284946462654],
     rotation: [3.119599245400525, 0.07009911961135065, -3.1330113468574026],
@@ -71,24 +75,20 @@ export const SCIENTISTS: ScientistSlot[] = [
   {
     id: "4",
     zone: "4 · center tile (table ↔ cylinder)",
-    url: "/3d-lab/scientist-4.glb",
-    walkUrl: "/3d-lab/scientist-4-walk.glb",
+    url: "/3d-lab/scientist-4-walk.glb",
     idleUrl: "/3d-lab/scientist-4-idle.glb",
     position: [-0.008629919775650807, 0.02692167797101399, -3.484664732923385],
     rotation: [3.141592653589793, -0.02806375087044089, 3.141592653589793],
   },
   {
     id: "5",
-    zone: "5 · blue cylindrical chamber",
-    url: "/3d-lab/scientist-5.glb",
-    // No walk anim wired — wandering disabled below; idle plays continuously inside the chamber.
+    zone: "5 · floor near specimen chamber",
+    url: "/3d-lab/scientist-5-walk.glb",
     idleUrl: "/3d-lab/scientist-5-idle.glb",
-    position: [0.28362921116237416, 1.6461800946291325, -0.35922740080251647],
+    // Position from updated lab-layout.json — #5 is now on the floor in
+    // front of the chamber rather than sealed inside it.
+    position: [0.19763748807533577, 0.05242026540169442, -0.501541107009971],
     rotation: [-3.141592653589793, 1.4905378342005715, -3.141592653589793],
-    // scaleMultiplier was tuned for the previous bbox-misreporting GLB; the
-    // new Meshy export sizes correctly via fitScientistUniformHeight alone.
-    // Re-add a multiplier here only if #5 looks wrong inside the chamber.
-    wandering: false,
   },
 ];
 
