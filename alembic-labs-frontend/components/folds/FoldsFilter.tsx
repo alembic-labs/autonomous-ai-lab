@@ -47,12 +47,17 @@ export function FoldsFilter() {
     });
   }, [params]);
 
+  // The filter UI only renders inside the "all" tab, so every apply has to
+  // preserve ?view=all — otherwise hitting "apply" would bounce the user
+  // back to /folds (= featured) and silently drop their archive filters.
+  const currentView = params.get("view");
   const apply = (next: FoldsFilterValues) => {
     const qs = new URLSearchParams();
     if (next.search) qs.set("search", next.search);
     if (next.peptide_class) qs.set("peptide_class", next.peptide_class);
     if (next.status) qs.set("status", next.status);
     if (next.sort && next.sort !== "newest") qs.set("sort", next.sort);
+    if (currentView === "all") qs.set("view", "all");
     qs.set("page", "1");
     router.push(`/folds${qs.toString() ? `?${qs}` : ""}`);
   };
@@ -64,7 +69,7 @@ export function FoldsFilter() {
 
   const onClear = () => {
     setValues(DEFAULTS);
-    router.push("/folds");
+    router.push(currentView === "all" ? "/folds?view=all" : "/folds");
   };
 
   return (

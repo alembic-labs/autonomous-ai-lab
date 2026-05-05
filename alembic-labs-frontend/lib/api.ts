@@ -398,6 +398,7 @@ export interface FoldsQuery {
   search?: string;
   min_confidence?: number;
   sort?: "newest" | "oldest" | "highest_confidence" | "lowest_confidence";
+  view?: "featured" | "all";
   page?: number;
   page_size?: number;
 }

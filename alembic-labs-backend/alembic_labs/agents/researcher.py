@@ -162,6 +162,20 @@ peptides where the lab has accumulated 3+ consecutive DISCARDED folds with
 no REFINED. These are almost certainly tool-limit failures (sub-resolution
 length, lipid target, AlphaFold-blind chemistry). Pick a different peptide
 this cycle — do not propose ANY hypothesis for a peptide on the AVOID list.
+
+PAIR-LEVEL AVOID LIST (HARD CONSTRAINT):
+A peptide can bind multiple targets — and Boltz-2's resolvability is a
+property of the (peptide, target) PAIR, not the peptide alone. The user
+message includes a "BLOCKED PAIRS" block listing exact peptide × target
+pairs that have produced 2+ DISCARDED outcomes with no REFINED across
+the lab's full history.
+
+Hard rule: do NOT propose a hypothesis whose ``(peptide_name,
+target_protein)`` pair appears in the blocked list. The peptide on its
+own may still be valid — pick a DIFFERENT canonical target for it.
+Example: if (MOTS-c, AMPK alpha-2) is blocked, you may still propose
+(MOTS-c, LARS1) because LARS1 is a separate binding partner with
+distinct structural prospects.
 """
 
 
@@ -250,6 +264,136 @@ async def _blocked_peptides(
         for name, counts in tally.items()
         if counts["DISCARDED"] >= threshold and counts["REFINED"] == 0
     }
+
+
+def _normalize_target_key(target: str | None) -> str:
+    """Lowercase + drop parenthetical qualifiers — pair matching needs to be
+    insensitive to case and to descriptors like "(AMPK α2)" vs "AMPK alpha-2"."""
+    if not target:
+        return ""
+    return target.split("(")[0].strip().lower()
+
+
+def _normalize_peptide_key(name: str | None) -> str:
+    if not name:
+        return ""
+    return name.strip().lower()
+
+
+async def _blocked_pairs(
+    db: AsyncSession, *, threshold: int = 2
+) -> dict[tuple[str, str], dict[str, int]]:
+    """Identify (peptide, target) pairs that fail repeatedly in lab history.
+
+    Looks across the **entire** lab history (not just a recent window).
+    Once a pair has accumulated ``threshold+`` DISCARDED outcomes and zero
+    REFINED ones, it's effectively un-resolvable by the current toolchain
+    (Boltz-2 has no co-crystal template, target is a class-B GPCR with
+    non-canonical chemistry on the peptide, etc.) and should not be
+    retried. Pair-level granularity preserves access to the same peptide
+    against *different* targets — e.g. (MOTS-c, AMPK alpha-2) is blocked
+    after 6 DISCARDED, but (MOTS-c, LARS1) — a different binding partner
+    with published evidence — stays available.
+
+    Returns a dict keyed by ``(peptide_lower, target_normalized_lower)``
+    so callers can match candidate proposals consistently.
+    """
+    rows = (
+        await db.execute(
+            select(Fold)
+            .where(Fold.fold_verdict.in_(["REFINED", "PROMISING", "DISCARDED"]))
+            .where(Fold.peptide_name.is_not(None))
+            .where(Fold.target_protein.is_not(None))
+        )
+    ).scalars().all()
+
+    tally: dict[tuple[str, str], dict[str, int]] = {}
+    for r in rows:
+        pep = _normalize_peptide_key(r.peptide_name)
+        tgt = _normalize_target_key(r.target_protein)
+        if not pep or not tgt:
+            continue
+        bucket = tally.setdefault(
+            (pep, tgt), {"REFINED": 0, "PROMISING": 0, "DISCARDED": 0}
+        )
+        verdict = (r.fold_verdict or "").upper()
+        if verdict in bucket:
+            bucket[verdict] += 1
+
+    return {
+        pair: counts
+        for pair, counts in tally.items()
+        if counts["DISCARDED"] >= threshold and counts["REFINED"] == 0
+    }
+
+
+def _is_pair_blocked(
+    peptide_name: str | None,
+    target_protein: str | None,
+    blocked: dict[tuple[str, str], dict[str, int]],
+) -> bool:
+    """Check whether a candidate proposal lands on a blocked pair."""
+    p = _normalize_peptide_key(peptide_name)
+    t = _normalize_target_key(target_protein)
+    if not p or not t:
+        return False
+    return (p, t) in blocked
+
+
+def _peptide_canonical_unblocked_count(
+    peptide: KnownPeptide,
+    blocked_pairs: dict[tuple[str, str], dict[str, int]],
+) -> int:
+    """Count canonical targets for ``peptide`` that aren't pair-blocked.
+
+    Used by the orchestrator to decide whether to re-roll the peptide
+    when *every* curated target is blocked (i.e. the peptide is
+    effectively dead even if the peptide-level threshold wasn't hit).
+    """
+    try:
+        raw = json.loads(peptide.canonical_targets) if peptide.canonical_targets else []
+    except json.JSONDecodeError:
+        return 0
+    if not raw:
+        # No curated targets — the agent will free-text propose, so we
+        # can't pre-check anything here. Treat as "1" (let it run).
+        return 1
+    pep_key = _normalize_peptide_key(peptide.name)
+    unblocked = 0
+    for t in raw:
+        tname = (t or {}).get("name") or ""
+        if (pep_key, _normalize_target_key(tname)) not in blocked_pairs:
+            unblocked += 1
+    return unblocked
+
+
+def _format_blocked_pairs(
+    blocked: dict[tuple[str, str], dict[str, int]], *, limit: int = 10
+) -> str:
+    """Render the blocked-pair list for the Researcher's user prompt.
+
+    Only show the top ``limit`` pairs (sorted by DISCARDED count desc)
+    so the prompt doesn't bloat as the lab ages. The agent only needs
+    enough examples to internalize the rule.
+    """
+    if not blocked:
+        return (
+            "(none yet — every peptide × target pair has produced at most "
+            "one DISCARDED outcome, or has at least one non-discarded run)"
+        )
+    items = sorted(
+        blocked.items(),
+        key=lambda kv: (-kv[1]["DISCARDED"], kv[0][0], kv[0][1]),
+    )[:limit]
+    lines = []
+    for (pep, tgt), counts in items:
+        lines.append(
+            f"  ({pep}, {tgt}) — {counts['DISCARDED']} DISCARDED, "
+            f"0 REFINED. Likely no co-crystal template / tool-limit "
+            f"on this exact pair. Pick a different target for this "
+            f"peptide if proposed."
+        )
+    return "\n".join(lines)
 
 
 def _format_blocked_peptides(blocked: dict[str, dict[str, int]]) -> str:
@@ -362,11 +506,18 @@ def _format_history_block(history: dict[str, list[dict[str, Any]]]) -> str:
     return "\n".join(parts)
 
 
-def _format_canonical_targets(peptide: KnownPeptide) -> tuple[str, list[dict[str, Any]]]:
+def _format_canonical_targets(
+    peptide: KnownPeptide,
+    *,
+    blocked_pairs: dict[tuple[str, str], dict[str, int]] | None = None,
+) -> tuple[str, list[dict[str, Any]]]:
     """Render the curated canonical_targets as a numbered block.
 
-    Returns (text, structured_list). The list is what we attach to the agent
-    log so the orchestrator can verify the agent picked from it.
+    Returns (text, structured_list). The structured_list contains ONLY
+    unblocked targets so post-LLM validation can confirm the agent picked
+    from this filtered pool. Blocked entries are still RENDERED in the
+    text (with a ⚠️ AVOID marker) so the agent understands the policy
+    rather than seeing a mysterious gap.
     """
     try:
         raw = json.loads(peptide.canonical_targets) if peptide.canonical_targets else []
@@ -377,15 +528,25 @@ def _format_canonical_targets(peptide: KnownPeptide) -> tuple[str, list[dict[str
             "(no curated targets — output null IDs and explain in rationale)",
             [],
         )
+
+    pep_key = _normalize_peptide_key(peptide.name)
+    blocked_pairs = blocked_pairs or {}
+
     lines: list[str] = []
+    unblocked_list: list[dict[str, Any]] = []
     for i, t in enumerate(raw, start=1):
         cid = t.get("chembl_id") or "—"
+        tname = t.get("name", "?")
+        is_blocked = (pep_key, _normalize_target_key(tname)) in blocked_pairs
+        marker = "  ⚠️  AVOID — pair has 2+ DISCARDED, 0 REFINED" if is_blocked else ""
         lines.append(
-            f"  {i}. {t.get('name', '?')} | UniProt {t.get('uniprot_id', '?')} | "
+            f"  {i}. {tname} | UniProt {t.get('uniprot_id', '?')} | "
             f"ChEMBL {cid} | gene {t.get('gene_symbol', '?')} | "
-            f"role: {t.get('mechanism_role', '—')}"
+            f"role: {t.get('mechanism_role', '—')}{marker}"
         )
-    return ("\n".join(lines), raw)
+        if not is_blocked:
+            unblocked_list.append(t)
+    return ("\n".join(lines), unblocked_list)
 
 
 def _build_user_message(
@@ -394,6 +555,7 @@ def _build_user_message(
     canonical_block: str,
     lab_wide_block: str,
     avoid_block: str,
+    blocked_pairs_block: str,
 ) -> str:
     """Render KnownPeptide + history + canonical targets into a prompt."""
     try:
@@ -414,6 +576,10 @@ def _build_user_message(
         f"{canonical_block}\n\n"
         "PEPTIDES TO AVOID THIS CYCLE (3+ consecutive DISCARDED, no REFINED):\n"
         f"{avoid_block}\n\n"
+        "BLOCKED (PEPTIDE × TARGET) PAIRS — full lab history, 2+ DISCARDED, "
+        "0 REFINED. Do NOT propose any of these pairs even if both the "
+        "peptide and the target individually look reasonable:\n"
+        f"{blocked_pairs_block}\n\n"
         "LAB-WIDE RECENT HISTORY (last folds across ALL peptides — for the "
         "rotation rule):\n"
         f"{lab_wide_block}\n\n"
@@ -446,11 +612,47 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
     try:
         recent_ids = await _recent_fold_peptide_ids(db)
         blocked = await _blocked_peptides(db)
-        peptide = await peptide_db.get_random_peptide(
-            db,
-            exclude_recent_ids=recent_ids,
-            blocked_names=list(blocked.keys()),
-        )
+        blocked_pairs = await _blocked_pairs(db)
+
+        # Re-roll peptide selection if every canonical target for the chosen
+        # peptide is pair-blocked (effectively dead). Cap at 5 attempts so we
+        # don't spin forever in a degenerate seed state — after that, accept
+        # the last peptide and let the LLM either pick a non-canonical
+        # target or fall through to the predictability gate downstream.
+        peptide: KnownPeptide | None = None
+        skip_names: list[str] = list(blocked.keys())
+        for attempt in range(5):
+            cand = await peptide_db.get_random_peptide(
+                db,
+                exclude_recent_ids=recent_ids,
+                blocked_names=skip_names,
+            )
+            if cand is None:
+                break
+            unblocked = _peptide_canonical_unblocked_count(cand, blocked_pairs)
+            if unblocked > 0:
+                peptide = cand
+                if attempt > 0:
+                    log.info(
+                        "alembic.researcher.peptide_reroll",
+                        fold_id=fold_id_cached,
+                        attempts=attempt + 1,
+                        chose=cand.name,
+                    )
+                break
+            log.info(
+                "alembic.researcher.peptide_all_targets_blocked",
+                fold_id=fold_id_cached,
+                peptide=cand.name,
+                attempt=attempt,
+            )
+            skip_names = skip_names + [cand.name]
+        if peptide is None:
+            # Final fallback: take whatever peptide is available even if all
+            # targets are blocked. The downstream gate will catch it.
+            peptide = await peptide_db.get_random_peptide(
+                db, exclude_recent_ids=recent_ids
+            )
         if peptide is None:
             raise RuntimeError("no KnownPeptide rows in DB — seed not run?")
 
@@ -460,10 +662,13 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
             peptide_class=peptide.peptide_class,
         )
         history_block = _format_history_block(history)
-        canonical_block, canonical_list = _format_canonical_targets(peptide)
+        canonical_block, canonical_list = _format_canonical_targets(
+            peptide, blocked_pairs=blocked_pairs
+        )
         lab_wide_rows = await _lab_wide_history(db, limit=10)
         lab_wide_block = _format_lab_wide_history(lab_wide_rows)
         avoid_block = _format_blocked_peptides(blocked)
+        blocked_pairs_block = _format_blocked_pairs(blocked_pairs)
 
         user_msg = _build_user_message(
             peptide,
@@ -471,6 +676,7 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
             canonical_block,
             lab_wide_block,
             avoid_block,
+            blocked_pairs_block,
         )
 
         # Up to 3 attempts:
@@ -512,6 +718,41 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
 
             if not isinstance(raw, dict):
                 last_err = ValueError("expected JSON object from Researcher")
+                continue
+
+            # Pair-level AVOID gate — checked BEFORE predictability so a
+            # historically-failing pair gets a regen with the right
+            # diagnostic, not a generic tool-limit one.
+            proposed_pep = raw.get("peptide_name") or peptide.name
+            proposed_tgt = raw.get("target_protein") or ""
+            if (
+                _is_pair_blocked(proposed_pep, proposed_tgt, blocked_pairs)
+                and attempt < 3
+            ):
+                pair_count = blocked_pairs.get(
+                    (
+                        _normalize_peptide_key(proposed_pep),
+                        _normalize_target_key(proposed_tgt),
+                    ),
+                    {"DISCARDED": 0},
+                )
+                log.warning(
+                    "alembic.researcher.pair_block_retry",
+                    fold_id=fold_id_cached,
+                    attempt=attempt,
+                    peptide=proposed_pep,
+                    target=proposed_tgt,
+                    discarded_count=pair_count.get("DISCARDED", 0),
+                )
+                user_msg = (
+                    user_msg
+                    + "\n\n⚠️  PREVIOUS PROPOSAL REJECTED — pair-level AVOID:\n"
+                    f"  ({proposed_pep}, {proposed_tgt}) has "
+                    f"{pair_count.get('DISCARDED', 0)} prior DISCARDED "
+                    "with 0 REFINED. Pick a DIFFERENT canonical target for "
+                    "this peptide. The peptide on its own is not blocked — "
+                    "only this exact pair."
+                )
                 continue
 
             # Pre-flight predictability check on the freshly proposed fold.
@@ -640,6 +881,8 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
             tags.append(f"gate_warnings:{len(gate_warnings)}")
         if blocked:
             tags.append(f"avoid_peptides:{len(blocked)}")
+        if blocked_pairs:
+            tags.append(f"avoid_pairs:{len(blocked_pairs)}")
         log.info(
             "alembic.researcher.rotation",
             fold_id=fold_id_cached,
@@ -647,6 +890,7 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
             category=category_raw,
             recent_count=len(lab_wide_rows),
             blocked_peptides=list(blocked.keys()),
+            blocked_pairs_count=len(blocked_pairs),
             gate_warnings=list(gate_warnings),
         )
         await log_agent_run(

@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import AgentRun, Fold
@@ -62,6 +62,16 @@ async def list_folds(
     sort: str = Query(
         "newest", description="newest|oldest|highest_confidence|lowest_confidence"
     ),
+    view: str | None = Query(
+        None,
+        description=(
+            "View preset. ``featured`` shows REFINED + PROMISING only, ranked "
+            "REFINED-first then by confidence — the curated front page. "
+            "``all`` (or unset) returns the full archive subject to other "
+            "filters. Featured implicitly overrides ``status`` and ``sort`` "
+            "and ignores DISCARDED / FAILED / PENDING folds."
+        ),
+    ),
     search: str | None = Query(
         None,
         description=(
@@ -82,14 +92,27 @@ async def list_folds(
 ) -> FoldsListResponse:
     """Paginated, filtered fold listing for the catalog page."""
 
+    is_featured = (view or "").strip().lower() == "featured"
+
     stmt = select(Fold)
     count_stmt = select(func.count(Fold.id))
+    if is_featured:
+        # Featured = curated front page. REFINED + PROMISING only, ranked
+        # REFINED-first then by confidence. The audit established that
+        # DISCARDED ≠ disproved (often it's a tool-limit failure), but
+        # the visual catalog still front-loaded those alongside genuine
+        # discoveries — featured fixes that signal calibration without
+        # hiding the archive (one click away on /folds?view=all).
+        stmt = stmt.where(Fold.fold_verdict.in_(["REFINED", "PROMISING"]))
+        count_stmt = count_stmt.where(
+            Fold.fold_verdict.in_(["REFINED", "PROMISING"])
+        )
+    elif status:
+        stmt = stmt.where(Fold.status == status.upper())
+        count_stmt = count_stmt.where(Fold.status == status.upper())
     if peptide_class:
         stmt = stmt.where(Fold.peptide_class == peptide_class.upper())
         count_stmt = count_stmt.where(Fold.peptide_class == peptide_class.upper())
-    if status:
-        stmt = stmt.where(Fold.status == status.upper())
-        count_stmt = count_stmt.where(Fold.status == status.upper())
     if search and search.strip():
         like = f"%{search.strip()}%"
         search_clause = or_(
@@ -104,8 +127,21 @@ async def list_folds(
         stmt = stmt.where(Fold.confidence_plddt >= min_confidence)
         count_stmt = count_stmt.where(Fold.confidence_plddt >= min_confidence)
 
-    order_clause = ALLOWED_SORTS.get(sort, ALLOWED_SORTS["newest"])
-    stmt = stmt.order_by(order_clause).offset((page - 1) * page_size).limit(page_size)
+    if is_featured:
+        verdict_rank = case(
+            (Fold.fold_verdict == "REFINED", 0),
+            (Fold.fold_verdict == "PROMISING", 1),
+            else_=2,
+        )
+        stmt = stmt.order_by(
+            verdict_rank.asc(),
+            Fold.confidence_plddt.desc().nulls_last(),
+            Fold.created_at.desc(),
+        )
+    else:
+        order_clause = ALLOWED_SORTS.get(sort, ALLOWED_SORTS["newest"])
+        stmt = stmt.order_by(order_clause)
+    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
 
     rows = list((await db.execute(stmt)).scalars().all())
     total = (await db.execute(count_stmt)).scalar_one() or 0
