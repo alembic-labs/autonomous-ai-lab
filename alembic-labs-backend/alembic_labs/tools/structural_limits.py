@@ -69,6 +69,43 @@ PUTATIVE_KEYWORDS: tuple[str, ...] = (
 )
 
 
+# Albumin (HSA / BSA) targets paired with fatty-acid lipidation modifications
+# are blocked: serum albumin has 9 fatty-acid pockets (FA1-FA9) and
+# lipidation-mediated reversible binding is a dynamic equilibrium, not a
+# single resolvable pose. Boltz-2 cannot adjudicate which pocket the lipid
+# tail engages. The strategy itself is valid (semaglutide, liraglutide
+# work this way) — just not predictable by current structure tools.
+# Calibrated from May 2026 batch: 3/4 metric-DISCARDED folds in the
+# #158-#186 window were peptide × albumin with lipidation
+# (#158 SS-31, #168 TB-500, #186 DSIP).
+ALBUMIN_KEYWORDS: tuple[str, ...] = (
+    "human serum albumin",
+    "serum albumin",
+    "albumin",
+    "hsa",
+    "bsa",
+)
+
+
+LIPIDATION_INDICATORS: tuple[str, ...] = (
+    "palmitoyl",
+    "myristoyl",
+    "octanoyl",
+    "stearoyl",
+    "stearic",
+    "lauroyl",
+    "hexadecanoic",
+    "tetradecanoic",
+    "fatty acid",
+    "γglu-c16",
+    "γ-glu-c16",
+    "gglu-c16",
+    "ggu-c16",
+    "c16 fatty",
+    "c18 fatty",
+)
+
+
 # Modification chemistry markers that AlphaFold-family models systematically
 # under-perform on. Lower-cased substrings matched against
 # ``modification_description``.
@@ -188,11 +225,26 @@ def assess_predictability(
                 "no defined binding interface to predict"
             )
 
+    # Albumin × lipidation pre-flight. Both terms must match before we
+    # block — albumin alone is a legitimate target (e.g. for a non-lipid
+    # peptide screening for FA-pocket competition), and lipidation alone
+    # is fine on a non-albumin target. The combination is the unresolvable
+    # case (FA1-FA9 dynamic equilibrium).
+    mod_name = (modification or "").strip()
+    if block_reason is None and mod_name and target_name:
+        albumin = _matches_any(target_name, ALBUMIN_KEYWORDS)
+        lipidation = _matches_any(mod_name, LIPIDATION_INDICATORS)
+        if albumin and lipidation:
+            block_reason = (
+                "albumin lipidation binding poses not reliably resolved by "
+                "Boltz-2 — multiple fatty-acid pockets (FA1-FA9), dynamic "
+                "reversible binding equilibrium, no single resolvable pose"
+            )
+
     # Soft warning: non-canonical chemistry + class B GPCR is a known
     # weak spot. The fold can still be useful as a negative-result data
     # point (and the user might want to test it anyway), so we don't
     # block — just attach a caveat the Communicator must surface.
-    mod_name = (modification or "").strip()
     if mod_name and target_name:
         has_non_canonical = bool(
             _matches_any(mod_name, NON_CANONICAL_INDICATORS)
@@ -218,6 +270,7 @@ def target_is_predictable(
     *,
     target_protein: str | None,
     target_uniprot: str | None,
+    modification: str | None = None,
 ) -> tuple[bool, str | None]:
     """Pre-flight check used by the orchestrator before Structural runs.
 
@@ -225,10 +278,15 @@ def target_is_predictable(
     ``assess_predictability`` because at this point we already have the
     canonical IDs (or know they're missing) and want a stricter "no
     UniProt = skip" rule.
+
+    ``modification`` is optional and back-compat: when omitted the
+    pair-level checks (currently albumin × lipidation) are skipped, so
+    older callers keep working unchanged.
     """
 
     name = (target_protein or "").strip()
     uniprot = (target_uniprot or "").strip()
+    mod = (modification or "").strip()
 
     if not uniprot:
         return False, "no UniProt ID resolved — target identity unconfirmed"
@@ -246,6 +304,16 @@ def target_is_predictable(
             f"target is putative/uncharacterized ('{putative}') — "
             "no defined binding interface to predict"
         )
+
+    if mod:
+        albumin = _matches_any(name, ALBUMIN_KEYWORDS)
+        lipidation = _matches_any(mod, LIPIDATION_INDICATORS)
+        if albumin and lipidation:
+            return False, (
+                "albumin lipidation binding poses not reliably resolved by "
+                "Boltz-2 — multiple fatty-acid pockets (FA1-FA9), dynamic "
+                "reversible binding equilibrium, no single resolvable pose"
+            )
 
     return True, None
 
@@ -268,6 +336,15 @@ Avoid proposing folds that fall in these categories:
      GIPR/GCGR) — AlphaFold-family models systematically underperform
      here. If you want to test such a combination, prefer a class A GPCR
      target instead.
+  4. Lipidation modifications (palmitoyl, myristoyl, octanoyl, stearoyl,
+     γGlu-C16/C18 fatty-acid spacers, etc.) paired with serum albumin
+     (HSA / BSA) as the target — albumin has 9 fatty-acid pockets
+     (FA1-FA9) and lipidation-mediated binding is a dynamic reversible
+     equilibrium, not a single resolvable pose. Boltz-2 cannot adjudicate.
+     The strategy is real (semaglutide, liraglutide work this way) — just
+     pick the *primary* receptor target instead (GLP-1R, etc.); albumin
+     binding is a known PK consequence, not a predictable structural
+     question.
 
 Before proposing any fold, mentally check it against these limits. If
 your hypothesis falls in one, propose a DIFFERENT modification or a

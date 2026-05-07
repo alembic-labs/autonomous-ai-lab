@@ -240,6 +240,7 @@ async def run_distillation_cycle() -> Fold | None:
         ok, reason = target_is_predictable(
             target_protein=fold.target_protein,
             target_uniprot=fold.target_uniprot_id,
+            modification=fold.modification_description,
         )
         gate_skipped_structural = False
         if not ok:

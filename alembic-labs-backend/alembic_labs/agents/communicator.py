@@ -110,6 +110,16 @@ nature of the result. If the user message includes a ``DISCARD REASON``
 line (set when the orchestrator's predictability gate refused the fold
 before Structural ever ran), open the TLDR with that exact reason.
 
+If the user message instead includes a ``BORDERLINE FRAMING`` block —
+applied when Boltz-2 *did* run, peptide geometry is plausible (pLDDT
+> 0.6) but interface confidence (ipTM) sits in the ambiguous 0.4-0.7
+band — open the TLDR with the conservative-call wording supplied in
+that block, verbatim where reasonable, and frame the rest of the
+report around an honest uncertainty boundary rather than a tool
+failure or a biological invalidation. ``DISCARD REASON`` and
+``BORDERLINE FRAMING`` are mutually exclusive — only one will appear
+in any given user message.
+
 ## TLDR
 State clearly that this fold was DISCARDED and give the primary reason
 in one sentence — distinguish "tool-limit failure" (sub-resolution
@@ -168,6 +178,48 @@ def _safe_json(payload: str | None) -> Any:
         return json.loads(payload)
     except json.JSONDecodeError:
         return None
+
+
+def _is_borderline_discard(fold: Fold) -> bool:
+    """A DISCARDED fold sitting in the ambiguous interface-confidence band.
+
+    Borderline = Boltz-2 actually ran (we have numbers, not a gate skip),
+    peptide geometry is plausible (pLDDT > 0.6) and ipTM falls in the
+    0.4-0.7 band where the lab's verdict policy refuses to flag PROMISING
+    without stronger evidence. This is meaningfully different from a hard
+    fail (ipTM < 0.3 = "non-convergent interface") and deserves a
+    different framing in the TLDR — an honest uncertainty boundary,
+    not a structural collapse.
+
+    A fold that hit the predictability gate (``discard_reason`` set) is
+    NOT borderline — it never reached Boltz-2. We rely on the caller to
+    skip this check when ``discard_reason`` is populated.
+    """
+    if (fold.fold_verdict or "").upper() != "DISCARDED":
+        return False
+    if fold.discard_reason:
+        return False
+    plddt = fold.confidence_plddt
+    iptm = fold.confidence_iptm
+    if plddt is None or iptm is None:
+        return False
+    return plddt > 0.6 and 0.4 < iptm < 0.7
+
+
+def _borderline_block(fold: Fold) -> str:
+    """Render the BORDERLINE FRAMING hint with the exact metric values."""
+    plddt = float(fold.confidence_plddt or 0.0)
+    iptm = float(fold.confidence_iptm or 0.0)
+    return (
+        "BORDERLINE FRAMING (open the TLDR with this conservative-call "
+        "wording, adapted to the metric values below):\n"
+        f"  This fold was DISCARDED as a conservative call — Boltz-2 "
+        f"returned plausible peptide geometry (pLDDT {plddt:.2f}, above the "
+        f"0.6 floor) but interface confidence (ipTM {iptm:.2f}) sits in "
+        "the ambiguous 0.4-0.7 band where the lab's verdict policy "
+        "requires stronger evidence before flagging PROMISING. This is "
+        "not a failed prediction — it is an honest uncertainty boundary."
+    )
 
 
 def _format_affinity_for_communicator(fold: Fold) -> str:
@@ -263,6 +315,14 @@ def _build_user_message(fold: Fold, related: list[Fold]) -> str:
         # fold before Structural ran. The Communicator MUST lead its TLDR
         # with this reason and skip the "biological invalidation" framing.
         discard_block = f"DISCARD REASON (from orchestrator gate): {fold.discard_reason}\n\n"
+    elif _is_borderline_discard(fold):
+        # Boltz-2 ran, peptide geometry was plausible, but interface ipTM
+        # landed in the ambiguous 0.4-0.7 band. We don't want the LLM to
+        # frame this as either a tool-limit failure or a biological
+        # invalidation — both miss the actual reason. The block below
+        # gives the Communicator the exact opening to use; the system
+        # prompt knows to honour it.
+        discard_block = f"{_borderline_block(fold)}\n\n"
 
     return (
         f"FOLD №{fold.id}\n"
@@ -497,7 +557,8 @@ async def run_communicator(db: AsyncSession, fold: Fold) -> dict[str, Any]:
             tags=[
                 f"verdict:{fold.fold_verdict or 'unknown'}",
                 f"related:{len(related)}",
-            ],
+            ]
+            + (["borderline_framing"] if _is_borderline_discard(fold) else []),
         )
     except Exception as err:  # noqa: BLE001
         error = str(err)

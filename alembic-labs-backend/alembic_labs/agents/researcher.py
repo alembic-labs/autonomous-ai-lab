@@ -18,6 +18,7 @@ The Researcher's output drives every downstream agent. Two design rules:
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -396,6 +397,68 @@ def _format_blocked_pairs(
     return "\n".join(lines)
 
 
+async def _diversity_summary(db: AsyncSession, *, window: int = 30) -> str:
+    """Surface dominant peptide × target pairs in the recent fold window.
+
+    The pair-AVOID block already hard-blocks pairs that *failed* repeatedly,
+    but the Researcher can still over-exploit *winning* pairs (Semax × MC4R,
+    Ipamorelin × GHSR-1a, TB-500 × β-actin in the May 2026 audit) and let
+    diversity collapse — quality up, variety down. This helper flags any
+    pair occupying ≥15% of the last ``window`` publishable folds so the
+    Researcher's user prompt can ask for a different pair on the next pick.
+
+    Returns an empty string when no pair is dominant — keeps the prompt
+    quiet during healthy diversity instead of injecting noise on every
+    cycle.
+    """
+    rows = (
+        await db.execute(
+            select(Fold)
+            .where(Fold.fold_verdict.in_(["REFINED", "PROMISING", "DISCARDED"]))
+            .order_by(Fold.id.desc())
+            .limit(window)
+        )
+    ).scalars().all()
+    if not rows:
+        return ""
+
+    pair_counts: dict[tuple[str, str], int] = defaultdict(int)
+    for f in rows:
+        pep = (f.peptide_name or "").strip()
+        tgt = _normalize_target_key(f.target_protein) if f.target_protein else ""
+        if pep and tgt:
+            pair_counts[(pep, tgt)] += 1
+
+    if not pair_counts:
+        return ""
+
+    total = sum(pair_counts.values())
+    top_pairs = sorted(pair_counts.items(), key=lambda x: -x[1])[:3]
+    dominant = [(pair, n) for pair, n in top_pairs if n / total >= 0.15]
+    if not dominant:
+        return ""
+
+    lines = [f"DIVERSITY CONTEXT (last {total} publishable folds):"]
+    for (pep, tgt), n in dominant:
+        pct = n / total * 100
+        lines.append(f"  - {pep} × {tgt}: {n} folds ({pct:.0f}%)")
+    lines.append("")
+    lines.append("Bias your next proposal toward, in priority order:")
+    lines.append(
+        "  1. A NEW peptide × target pair not in the dominant list above "
+        "(strongly preferred — most lab signal comes from breadth)."
+    )
+    lines.append(
+        "  2. A different modification CLASS on an existing winner "
+        "(e.g. cyclization instead of D-amino swap on the same pair)."
+    )
+    lines.append(
+        "  3. AVOID: another minor variant of the same modification class "
+        "on a pair that's already dominant."
+    )
+    return "\n".join(lines)
+
+
 def _format_blocked_peptides(blocked: dict[str, dict[str, int]]) -> str:
     """Render the AVOID block exposed to the Researcher."""
     if not blocked:
@@ -556,12 +619,21 @@ def _build_user_message(
     lab_wide_block: str,
     avoid_block: str,
     blocked_pairs_block: str,
+    diversity_block: str,
 ) -> str:
     """Render KnownPeptide + history + canonical targets into a prompt."""
     try:
         targets = json.loads(peptide.known_targets) if peptide.known_targets else []
     except json.JSONDecodeError:
         targets = []
+
+    # Diversity is opt-in: ``_diversity_summary`` returns "" when no pair
+    # is dominant, in which case we drop the section entirely instead of
+    # rendering an empty header. Keeps the prompt tight during healthy
+    # diversity and only adds friction when the lab is actually skewing.
+    diversity_section = (
+        f"{diversity_block}\n\n" if diversity_block.strip() else ""
+    )
 
     return (
         f"Peptide: {peptide.name}\n"
@@ -580,6 +652,7 @@ def _build_user_message(
         "0 REFINED. Do NOT propose any of these pairs even if both the "
         "peptide and the target individually look reasonable:\n"
         f"{blocked_pairs_block}\n\n"
+        f"{diversity_section}"
         "LAB-WIDE RECENT HISTORY (last folds across ALL peptides — for the "
         "rotation rule):\n"
         f"{lab_wide_block}\n\n"
@@ -669,6 +742,7 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
         lab_wide_block = _format_lab_wide_history(lab_wide_rows)
         avoid_block = _format_blocked_peptides(blocked)
         blocked_pairs_block = _format_blocked_pairs(blocked_pairs)
+        diversity_block = await _diversity_summary(db, window=30)
 
         user_msg = _build_user_message(
             peptide,
@@ -677,6 +751,7 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
             lab_wide_block,
             avoid_block,
             blocked_pairs_block,
+            diversity_block,
         )
 
         # Up to 3 attempts:
@@ -883,6 +958,8 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
             tags.append(f"avoid_peptides:{len(blocked)}")
         if blocked_pairs:
             tags.append(f"avoid_pairs:{len(blocked_pairs)}")
+        if diversity_block:
+            tags.append("diversity_nudge")
         log.info(
             "alembic.researcher.rotation",
             fold_id=fold_id_cached,
