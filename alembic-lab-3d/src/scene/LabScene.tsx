@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useAnimations, useGLTF } from "@react-three/drei";
 import { SkeletonUtils } from "three-stdlib";
@@ -215,14 +215,29 @@ function ScientistModel({ slot }: { slot: ScientistSlot }) {
   );
 }
 
+/**
+ * Per-actor Suspense boundaries. The lab room shows the moment its
+ * 3 MB GLB lands, and each scientist materialises independently as
+ * their rigged-mesh GLB finishes parsing — instead of waiting for the
+ * whole 19 MB scene to be ready before anything paints.
+ *
+ * That gives the user a populated environment within ~1 second on a
+ * decent connection, with characters popping in over the following
+ * few seconds. Felt latency drops dramatically vs the all-or-nothing
+ * suspense.
+ */
 export function LabSceneContent() {
   return (
     <>
-      <LabRoom />
+      <Suspense fallback={null}>
+        <LabRoom />
+      </Suspense>
       {SCIENTISTS.map((s) => (
-        <TransformableAgent key={s.id} id={s.id}>
-          <ScientistModel slot={s} />
-        </TransformableAgent>
+        <Suspense key={s.id} fallback={null}>
+          <TransformableAgent id={s.id}>
+            <ScientistModel slot={s} />
+          </TransformableAgent>
+        </Suspense>
       ))}
     </>
   );

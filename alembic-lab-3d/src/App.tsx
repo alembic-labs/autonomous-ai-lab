@@ -1,4 +1,5 @@
 import { LabCanvas } from "./LabCanvas";
+import { LabLoader } from "./LabLoader";
 import { LayoutEditProvider, useLayoutEdit } from "./layoutEdit";
 import { AgentLiveProvider } from "./agents/agentLive";
 import { AgentInfoPanel } from "./agents/AgentInfoPanel";
@@ -85,6 +86,11 @@ function EditToolbar() {
 }
 
 function AppInner({ editUi }: { editUi: boolean }) {
+  // Mount the canvas immediately. Per-actor Suspense boundaries (lab
+  // room + each scientist) handle progressive reveal — the room shows
+  // the moment its 3 MB GLB lands, scientists pop in over the next
+  // few seconds. Loader sits on top until LAB_GLB is in the HTTP
+  // cache, then fades.
   return (
     <>
       <header className="app-header">
@@ -101,6 +107,7 @@ function AppInner({ editUi }: { editUi: boolean }) {
         <LabCanvas />
         <LabHUD />
         <AgentInfoPanel />
+        <LabLoader />
       </div>
     </>
   );

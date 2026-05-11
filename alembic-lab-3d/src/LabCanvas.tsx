@@ -3,7 +3,12 @@
 import { Suspense, useEffect } from "react";
 import * as THREE from "three";
 import { Canvas, useThree } from "@react-three/fiber";
-import { Environment, OrbitControls, useGLTF } from "@react-three/drei";
+import {
+  Environment,
+  OrbitControls,
+  Preload,
+  useGLTF,
+} from "@react-three/drei";
 import { useLayoutEdit } from "./layoutEdit";
 import { useAgentLive } from "./agents/agentLive";
 import { BRAND } from "./scene/brandPalette";
@@ -125,7 +130,6 @@ export function LabCanvas() {
       />
 
       <Suspense fallback={null}>
-        <LabSceneContent />
         <Environment
           preset="warehouse"
           environmentIntensity={0.26}
@@ -133,6 +137,21 @@ export function LabCanvas() {
         />
         <StaticShadowMap />
       </Suspense>
+      {/*
+        Per-actor Suspense boundaries live inside LabSceneContent so the
+        room and each scientist resolve independently. Mount it outside
+        the environment Suspense so a slow HDR fetch never blocks the
+        room from showing.
+      */}
+      <LabSceneContent />
+      {/*
+        Preload triggers a hidden render pass that compiles every
+        material's shader the moment it lands. Without this the first
+        time a scientist enters the frustum the GPU stalls for a few
+        frames doing JIT shader compilation — visible as a "freeze"
+        when the lab appears.
+      */}
+      <Preload all />
 
       <OrbitControls
         ref={orbitRef as never}
