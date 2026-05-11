@@ -98,6 +98,26 @@ You MUST pick the target from the CANONICAL TARGETS list provided in the user me
   be the relevant binding partner — flag the missing IDs in your rationale so the
   Clinical agent can react.
 
+TARGET QUALITY CHECKLIST — before proposing any peptide × target pair,
+internally verify that the target satisfies ALL FOUR of:
+
+  1. Has a canonical UniProt ID you can name confidently (NOT "putative",
+     NOT "candidate", NOT "binding site of unknown identity").
+  2. Has at least one published peptide-binding interaction in the literature
+     (any peptide, not necessarily yours — the question is whether the
+     protein has *known* peptide binders at all).
+  3. Has PDB structures available, or close-paralog homology models, so
+     Boltz-2 has structural priors to lean on.
+  4. Is NOT a lipid, a membrane, or a disordered protein region.
+
+If you cannot confirm all 4 from your training knowledge or available
+context, do NOT propose this target — propose a different target instead.
+Vague descriptors like "Tuftsin-binding neutrophil receptor / FPR-family
+receptor", "putative DSIP binding site", or "candidate neuropeptide
+receptor" indicate the target is underdetermined and should never appear
+in your output. Quality of target selection matters more than novelty;
+a well-chosen winning pair beats a forced new pair every time.
+
 RESEARCH DIRECTIONS — every fold targets ONE primary research focus:
 
   1. STABILITY        — protection against enzymatic degradation (proteases, peptidases, oxidation).
@@ -282,22 +302,37 @@ def _normalize_peptide_key(name: str | None) -> str:
 
 
 async def _blocked_pairs(
-    db: AsyncSession, *, threshold: int = 2
+    db: AsyncSession, *, window: int = 7
 ) -> dict[tuple[str, str], dict[str, int]]:
-    """Identify (peptide, target) pairs that fail repeatedly in lab history.
+    """Identify (peptide, target) pairs that fail in their RECENT window.
 
-    Looks across the **entire** lab history (not just a recent window).
-    Once a pair has accumulated ``threshold+`` DISCARDED outcomes and zero
-    REFINED ones, it's effectively un-resolvable by the current toolchain
-    (Boltz-2 has no co-crystal template, target is a class-B GPCR with
-    non-canonical chemistry on the peptide, etc.) and should not be
-    retried. Pair-level granularity preserves access to the same peptide
-    against *different* targets — e.g. (MOTS-c, AMPK alpha-2) is blocked
-    after 6 DISCARDED, but (MOTS-c, LARS1) — a different binding partner
-    with published evidence — stays available.
+    Looks only at the last ``window`` attempts on each pair (most-recent
+    first). A pair is blocked when either trigger fires:
+
+    1. ``3+`` DISCARDED AND ``0`` REFINED in the recent window — a fresh
+       losing streak, regardless of historical REFINEDs.
+    2. ``>=5`` recent attempts AND ``>=70%`` of them DISCARDED — a pair
+       that's degraded heavily even if it still has one or two recent
+       non-DISCARDED outcomes.
+
+    The recent-window framing replaces the original "0 REFINED EVER"
+    criterion because the previous batch surfaced pairs that earned ONE
+    historical REFINED then catastrophically degraded — (SS-31, kappa-
+    type opioid) was REFINED on #187 then produced 6 consecutive DISCARDED
+    runs as the Researcher cycled near-duplicate modifications on the
+    same pair, while (Retatrutide, GLP-1R) earned REFINED on #100, #162
+    and then went 5 DISCARDED + 1 PROMISING across #189–#231. The old
+    "ever REFINED" rule ignored both; the new window catches both.
+    ``window=7`` was chosen so the Retatrutide×GLP-1R degradation
+    (5/6 recent DISCARDED) trips trigger 1 cleanly — wider windows
+    leave the historical REFINEDs inside the window and dilute the
+    signal.
 
     Returns a dict keyed by ``(peptide_lower, target_normalized_lower)``
-    so callers can match candidate proposals consistently.
+    with per-pair stats from the recent window:
+    ``DISCARDED``/``REFINED``/``PROMISING``/``RECENT_TOTAL``. Callers
+    can match candidate proposals via ``in`` and ``_format_blocked_pairs``
+    renders the counts honestly.
     """
     rows = (
         await db.execute(
@@ -305,27 +340,37 @@ async def _blocked_pairs(
             .where(Fold.fold_verdict.in_(["REFINED", "PROMISING", "DISCARDED"]))
             .where(Fold.peptide_name.is_not(None))
             .where(Fold.target_protein.is_not(None))
+            .order_by(Fold.id.desc())  # most-recent first; sliced per pair below
         )
     ).scalars().all()
 
-    tally: dict[tuple[str, str], dict[str, int]] = {}
+    pair_history: dict[tuple[str, str], list[str]] = defaultdict(list)
     for r in rows:
         pep = _normalize_peptide_key(r.peptide_name)
         tgt = _normalize_target_key(r.target_protein)
         if not pep or not tgt:
             continue
-        bucket = tally.setdefault(
-            (pep, tgt), {"REFINED": 0, "PROMISING": 0, "DISCARDED": 0}
-        )
-        verdict = (r.fold_verdict or "").upper()
-        if verdict in bucket:
-            bucket[verdict] += 1
+        pair_history[(pep, tgt)].append((r.fold_verdict or "").upper())
 
-    return {
-        pair: counts
-        for pair, counts in tally.items()
-        if counts["DISCARDED"] >= threshold and counts["REFINED"] == 0
-    }
+    blocked: dict[tuple[str, str], dict[str, int]] = {}
+    for pair, history in pair_history.items():
+        recent = history[:window]
+        discarded = sum(1 for v in recent if v == "DISCARDED")
+        refined = sum(1 for v in recent if v == "REFINED")
+        promising = sum(1 for v in recent if v == "PROMISING")
+        total = len(recent)
+        # Trigger 1: 3+ recent DISCARDED, 0 recent REFINED — fresh streak.
+        streak_block = discarded >= 3 and refined == 0
+        # Trigger 2: 5+ recent attempts, 70%+ DISCARDED — sustained dominance.
+        dominance_block = total >= 5 and (discarded / total) >= 0.7
+        if streak_block or dominance_block:
+            blocked[pair] = {
+                "DISCARDED": discarded,
+                "REFINED": refined,
+                "PROMISING": promising,
+                "RECENT_TOTAL": total,
+            }
+    return blocked
 
 
 def _is_pair_blocked(
@@ -373,43 +418,145 @@ def _format_blocked_pairs(
 ) -> str:
     """Render the blocked-pair list for the Researcher's user prompt.
 
-    Only show the top ``limit`` pairs (sorted by DISCARDED count desc)
-    so the prompt doesn't bloat as the lab ages. The agent only needs
-    enough examples to internalize the rule.
+    Only show the top ``limit`` pairs (sorted by recent DISCARDED count
+    desc) so the prompt doesn't bloat as the lab ages. The agent only
+    needs enough examples to internalize the rule.
+
+    The text format reflects the recent-window logic: pairs may have
+    historical REFINEDs but degraded recently, so we show the ratio
+    rather than asserting "0 REFINED ever".
     """
     if not blocked:
         return (
-            "(none yet — every peptide × target pair has produced at most "
-            "one DISCARDED outcome, or has at least one non-discarded run)"
+            "(none — recent window is healthy for every observed peptide × "
+            "target pair)"
         )
     items = sorted(
         blocked.items(),
-        key=lambda kv: (-kv[1]["DISCARDED"], kv[0][0], kv[0][1]),
+        key=lambda kv: (-kv[1].get("DISCARDED", 0), kv[0][0], kv[0][1]),
     )[:limit]
     lines = []
     for (pep, tgt), counts in items:
+        d = counts.get("DISCARDED", 0)
+        r = counts.get("REFINED", 0)
+        total = counts.get("RECENT_TOTAL", 0)
+        # Bracket extra context only when historical REFINED present —
+        # makes it obvious why the pair *was* on a winning streak before.
+        refined_note = (
+            f", {r} REFINED (historical win followed by degradation)"
+            if r
+            else ", 0 REFINED in window"
+        )
         lines.append(
-            f"  ({pep}, {tgt}) — {counts['DISCARDED']} DISCARDED, "
-            f"0 REFINED. Likely no co-crystal template / tool-limit "
-            f"on this exact pair. Pick a different target for this "
-            f"peptide if proposed."
+            f"  ({pep}, {tgt}) — {d}/{total} recent attempts DISCARDED"
+            f"{refined_note}. Pair has degraded in the recent window — "
+            "pick a different target for this peptide if proposed."
         )
     return "\n".join(lines)
 
 
+async def _recent_modifications_by_target(
+    db: AsyncSession,
+    peptide_name: str,
+    *,
+    limit_per_target: int = 5,
+    history_window: int = 50,
+) -> dict[str, list[dict[str, Any]]]:
+    """Recent modification attempts on ``peptide_name``, grouped by target.
+
+    For each target that's been paired with this peptide in the recent
+    ``history_window`` publishable folds, return up to ``limit_per_target``
+    most-recent attempts with the modification text, verdict, pLDDT, ipTM.
+    Used by the Researcher's user-message to surface "what's been tried
+    on each pair already" BEFORE proposal so it doesn't repeat near-
+    duplicate modifications — the May 2026 audit found Retatrutide ×
+    GLP-1R folds #189, #206, #217 all returned suspiciously identical
+    pLDDT 0.714 because the cross-fold memory wasn't grouping by pair.
+
+    Returns ``{normalized_target_key: [attempt_dict, ...]}`` ordered by
+    fold id desc. Empty dict if peptide has no prior publishable folds.
+    """
+    rows = (
+        await db.execute(
+            select(Fold)
+            .where(Fold.peptide_name == peptide_name)
+            .where(Fold.fold_verdict.in_(["REFINED", "PROMISING", "DISCARDED"]))
+            .where(Fold.target_protein.is_not(None))
+            .order_by(Fold.id.desc())
+            .limit(history_window)
+        )
+    ).scalars().all()
+
+    by_target: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        tgt_key = _normalize_target_key(r.target_protein)
+        if not tgt_key:
+            continue
+        bucket = by_target.setdefault(tgt_key, [])
+        if len(bucket) >= limit_per_target:
+            continue
+        bucket.append(
+            {
+                "id": r.id,
+                "target_display": (r.target_protein or "").split("(")[0].strip(),
+                "modification": (r.modification_description or "")[:120],
+                "verdict": r.fold_verdict or r.status or "PENDING",
+                "plddt": round(r.confidence_plddt, 2)
+                if r.confidence_plddt is not None
+                else None,
+                "iptm": round(r.confidence_iptm, 2)
+                if r.confidence_iptm is not None
+                else None,
+            }
+        )
+    return by_target
+
+
+def _format_recent_pair_attempts(
+    by_target: dict[str, list[dict[str, Any]]],
+) -> str:
+    """Render per-target recent attempts for the Researcher's user prompt."""
+    if not by_target:
+        return (
+            "(no prior attempts on this peptide with any target — this is "
+            "one of the lab's first runs on it)"
+        )
+    parts: list[str] = []
+    # Stable display order: target with most recent attempts first.
+    for tgt_key, attempts in sorted(
+        by_target.items(), key=lambda kv: (-len(kv[1]), kv[0])
+    ):
+        if not attempts:
+            continue
+        display = attempts[0].get("target_display") or tgt_key
+        parts.append(f"  vs {display}:")
+        for a in attempts:
+            metric_bits: list[str] = []
+            if a.get("plddt") is not None:
+                metric_bits.append(f"pLDDT {a['plddt']}")
+            if a.get("iptm") is not None:
+                metric_bits.append(f"ipTM {a['iptm']}")
+            metrics = (", " + ", ".join(metric_bits)) if metric_bits else ""
+            mod = a.get("modification") or "—"
+            parts.append(
+                f"    #{a['id']}: {mod} → {a['verdict']}{metrics}"
+            )
+    return "\n".join(parts)
+
+
 async def _diversity_summary(db: AsyncSession, *, window: int = 30) -> str:
-    """Surface dominant peptide × target pairs in the recent fold window.
+    """Surface DOMINANT peptide × target pairs in the recent fold window.
 
-    The pair-AVOID block already hard-blocks pairs that *failed* repeatedly,
-    but the Researcher can still over-exploit *winning* pairs (Semax × MC4R,
-    Ipamorelin × GHSR-1a, TB-500 × β-actin in the May 2026 audit) and let
-    diversity collapse — quality up, variety down. This helper flags any
-    pair occupying ≥15% of the last ``window`` publishable folds so the
-    Researcher's user prompt can ask for a different pair on the next pick.
+    The original cut-off of ≥15% pushed too hard — Researcher started
+    proposing weakly-grounded targets (Selank × Neuromedin U receptor 2,
+    Selank × Aminopeptidase N) just to dodge winners, and the gate caught
+    them at runtime instead of producing useful folds. We raise the
+    threshold to ≥35% (only flag when a pair is *strongly* dominant) and
+    soften the prompt from "prefer new pair" to "rationale strength
+    decides". A good scientist follows the science, not a quota.
 
-    Returns an empty string when no pair is dominant — keeps the prompt
-    quiet during healthy diversity instead of injecting noise on every
-    cycle.
+    Returns "" when no pair is strongly dominant — keeps the prompt quiet
+    during healthy diversity instead of injecting noise on every cycle.
     """
     rows = (
         await db.execute(
@@ -433,28 +580,24 @@ async def _diversity_summary(db: AsyncSession, *, window: int = 30) -> str:
         return ""
 
     total = sum(pair_counts.values())
-    top_pairs = sorted(pair_counts.items(), key=lambda x: -x[1])[:3]
-    dominant = [(pair, n) for pair, n in top_pairs if n / total >= 0.15]
+    dominant = [
+        (pair, n) for pair, n in pair_counts.items() if n / total >= 0.35
+    ]
     if not dominant:
         return ""
 
+    dominant.sort(key=lambda item: -item[1])
     lines = [f"DIVERSITY CONTEXT (last {total} publishable folds):"]
     for (pep, tgt), n in dominant:
         pct = n / total * 100
         lines.append(f"  - {pep} × {tgt}: {n} folds ({pct:.0f}%)")
     lines.append("")
-    lines.append("Bias your next proposal toward, in priority order:")
     lines.append(
-        "  1. A NEW peptide × target pair not in the dominant list above "
-        "(strongly preferred — most lab signal comes from breadth)."
-    )
-    lines.append(
-        "  2. A different modification CLASS on an existing winner "
-        "(e.g. cyclization instead of D-amino swap on the same pair)."
-    )
-    lines.append(
-        "  3. AVOID: another minor variant of the same modification class "
-        "on a pair that's already dominant."
+        "If you have a strong scientific rationale for proposing on this "
+        "dominant pair again — that's fine, keep going. Alternatively, "
+        "if a different modification class or a new peptide × target "
+        "pair has compelling rationale, propose that. Decision criterion: "
+        "rationale strength, not diversity quota."
     )
     return "\n".join(lines)
 
@@ -620,6 +763,7 @@ def _build_user_message(
     avoid_block: str,
     blocked_pairs_block: str,
     diversity_block: str,
+    recent_pair_attempts_block: str,
 ) -> str:
     """Render KnownPeptide + history + canonical targets into a prompt."""
     try:
@@ -628,9 +772,10 @@ def _build_user_message(
         targets = []
 
     # Diversity is opt-in: ``_diversity_summary`` returns "" when no pair
-    # is dominant, in which case we drop the section entirely instead of
-    # rendering an empty header. Keeps the prompt tight during healthy
-    # diversity and only adds friction when the lab is actually skewing.
+    # is strongly dominant, in which case we drop the section entirely
+    # instead of rendering an empty header. Keeps the prompt tight during
+    # healthy diversity and only adds friction when the lab is actually
+    # skewing past the 35% threshold.
     diversity_section = (
         f"{diversity_block}\n\n" if diversity_block.strip() else ""
     )
@@ -648,11 +793,24 @@ def _build_user_message(
         f"{canonical_block}\n\n"
         "PEPTIDES TO AVOID THIS CYCLE (3+ consecutive DISCARDED, no REFINED):\n"
         f"{avoid_block}\n\n"
-        "BLOCKED (PEPTIDE × TARGET) PAIRS — full lab history, 2+ DISCARDED, "
-        "0 REFINED. Do NOT propose any of these pairs even if both the "
-        "peptide and the target individually look reasonable:\n"
+        "BLOCKED (PEPTIDE × TARGET) PAIRS — recent-window check (last 7 "
+        "attempts on each pair): 3+ DISCARDED with 0 REFINED, OR ≥70% of "
+        "the last 5+ DISCARDED. Pairs may have historical REFINEDs but "
+        "have since degraded. Do NOT propose any of these pairs even if "
+        "both the peptide and the target individually look reasonable:\n"
         f"{blocked_pairs_block}\n\n"
         f"{diversity_section}"
+        "RECENT ATTEMPTS ON THIS PEPTIDE'S PAIRS (modification × outcome, "
+        "grouped by target):\n"
+        f"{recent_pair_attempts_block}\n\n"
+        "If your proposed modification is structurally similar to any of "
+        "the recent attempts above on the SAME pair (same residue "
+        "position, same chemistry class, same mechanism), propose a "
+        "DIFFERENT modification instead — repeating near-duplicate "
+        "modifications on a pair where the modification class already "
+        "failed is wasted compute. If your modification is genuinely "
+        "different (different position, different chemistry class, "
+        "different mechanism), proceed.\n\n"
         "LAB-WIDE RECENT HISTORY (last folds across ALL peptides — for the "
         "rotation rule):\n"
         f"{lab_wide_block}\n\n"
@@ -743,6 +901,12 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
         avoid_block = _format_blocked_peptides(blocked)
         blocked_pairs_block = _format_blocked_pairs(blocked_pairs)
         diversity_block = await _diversity_summary(db, window=30)
+        pair_attempts_by_target = await _recent_modifications_by_target(
+            db, peptide.name
+        )
+        recent_pair_attempts_block = _format_recent_pair_attempts(
+            pair_attempts_by_target
+        )
 
         user_msg = _build_user_message(
             peptide,
@@ -752,6 +916,7 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
             avoid_block,
             blocked_pairs_block,
             diversity_block,
+            recent_pair_attempts_block,
         )
 
         # Up to 3 attempts:
@@ -960,6 +1125,8 @@ async def run_researcher(db: AsyncSession, fold: Fold) -> dict[str, Any]:
             tags.append(f"avoid_pairs:{len(blocked_pairs)}")
         if diversity_block:
             tags.append("diversity_nudge")
+        if pair_attempts_by_target:
+            tags.append(f"recent_pair_attempts:{len(pair_attempts_by_target)}")
         log.info(
             "alembic.researcher.rotation",
             fold_id=fold_id_cached,
